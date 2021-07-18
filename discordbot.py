@@ -61,7 +61,7 @@ import codecs
 import random
 from typing import List, Dict, Any, Optional, Tuple
 from io import StringIO
-from typing import Sequence, TypeVar
+from typing import Sequence, TypeVar, Callable
 from functools import cmp_to_key
 
 T = TypeVar('T') 
@@ -336,9 +336,8 @@ class ClanMember():
 
     def History(self):
         str = ''
-        count = 1
         for h in self.history:
-            str += '%d回目 %d周目:%s' % (count,
+            str += '%d凸目 %d周目:%s' % (h.sortie + 1,
             h.boss // BOSSNUMBER + 1, 
             BossName[h.boss % BOSSNUMBER])
 
@@ -347,8 +346,6 @@ class ClanMember():
 
             str += '\n'
 
-            if h.overtime == 0:
-                count += 1
         if str == '' : str = '履歴がありません'
         return str
 
@@ -699,6 +696,8 @@ class Clan():
 
         self.messagereaction : Dict[int, MessageReaction] = {}
 
+        self.dicehistory = [10, 30, 50, 70, 90]
+
         self.commandlist = self.FuncMap()
 
     def Save(self, clanid : int):
@@ -767,25 +766,27 @@ class Clan():
             (['cancel'], self.Cancel),
             (['reload'], self.Reload),
             (['taskkill', 'タスキル'], self.TaskKill),
-            (['memo', 'メモ'], self.Memo),
+#            (['memo', 'メモ'], self.Memo),
             (['defeat'], self.Defeat),
             (['undefeat'], self.Undefeat),
             (['setboss'], self.SetBoss),
+            (['unreserve', '予約消'], self.Unreserve),
             (['reserve', '予約'], self.Reserve),
             (['place', '配置'], self.Place),
-            (['recruit', '募集'], self.Recruit),
+#            (['recruit', '募集'], self.Recruit),
             (['refresh'], self.Refresh),
             (['memberlist'], self.MemberList),
             (['channellist'], self.ChannelList),
             (['namedelimiter'], self.NameDelimiter),
             (['memberinitialize'], self.MemberInitialize),
             (['setmemberrole'], self.SetMemberRole),
-            (['role'], self.Role),
+            (['dice', 'サイコロ', 'ダイス'], self.Dice),
+#            (['role'], self.Role),
             (['reset'], self.MemberReset),
             (['history'], self.History),
-            (['overtime', '持ち越し時間'], self.OverTime),
-            (['defeatlog'], self.DefeatLog),
-            (['attacklog'], self.AttackLog),
+#            (['overtime', '持ち越し時間'], self.OverTime),
+#            (['defeatlog'], self.DefeatLog),
+#            (['attacklog'], self.AttackLog),
             (['score'], self.Score),
             (['settingreload'], self.SettingReload),
             (['delete'], self.MemberDelete),
@@ -793,12 +794,12 @@ class Clan():
             (['monthlyreset'], self.MonthlyReset),
             (['bossname'], self.BossName),
             (['term'], self.Term),
-            (['remain','残り'], self.Remain),
-            (['damage','ダメ','ダメージ'], self.Damage),
-            (['pd'], self.PhantomDamage),
-            (['dtest'], self.DamageTest),
-            (['clanattack'], self.AllClanAttack),
-            (['clanreport'], self.AllClanReport),
+#            (['remain','残り'], self.Remain),
+#            (['damage','ダメ','ダメージ'], self.Damage),
+#            (['pd'], self.PhantomDamage),
+#            (['dtest'], self.DamageTest),
+#            (['clanattack'], self.AllClanAttack),
+#            (['clanreport'], self.AllClanReport),
             (['active', 'アクティブ'], self.ActiveMember),
             (['servermessage'], self.ServerMessage),
             (['serverleave'], self.ServerLeave),
@@ -1020,7 +1021,7 @@ class Clan():
 
             if idx == 0:
                 member.Finish(payload.message_id)
-                self.RemoveReserve(boss, member)
+                self.RemoveReserve(lambda m: m.member == member and m.boss == boss)
 
                 await self.damagecontrol[boss % BOSSNUMBER].Injure(member)
             
@@ -1241,6 +1242,25 @@ class Clan():
         
         return True
 
+    async def Unreserve(self, message, member : ClanMember, opt : str):
+        if opt == 'all':
+            self.RemoveReserve(lambda m: m.member == member)
+            self.TemporaryMessage(message.channel, '予約をすべて消しました')
+            return True
+
+        route = self.RouteAnalyze(opt)
+
+        if len(route) == 0:
+            self.TemporaryMessage(message.channel, '消したい周回を入れてください すべて消すならallと入れてください')
+            return False
+
+        self.RemoveReserve(lambda m: m.member == member and m.boss in route)
+
+        routestr = [('%d-%d' % (m // BOSSNUMBER + 1, m % BOSSNUMBER +1)) for m in route]
+        self.TemporaryMessage(message.channel, '%sの予約を消しました' % (','.join(routestr)))
+        
+        return True
+
     async def Place(self, message, member : ClanMember, opt : str):
         strarray = opt.split(' ')
         
@@ -1352,6 +1372,19 @@ class Clan():
                 self.GetMember(m)
 
         self.TemporaryMessage(message.channel, '%s のRoleのメンバーを登録しました' % role.name)
+
+        return True
+
+    async def Dice(self, message, member : ClanMember, opt):
+
+        while True:
+            rndstar = int(random.random() * 100 + 1)
+            if rndstar not in self.dicehistory:
+                self.dicehistory = self.dicehistory[1:]
+                self.dicehistory.append(rndstar)
+                break
+
+        await message.channel.send('%s %s %d' % (member.name, chr(int(0x1F3B2)), rndstar))
 
         return True
 
@@ -2047,11 +2080,8 @@ class Clan():
             if insertflag:
                 self.reservelist.append(ReserveUnit(r, member, comment))
 
-    def RemoveReserve(self, boss : int, member : Optional[ClanMember]):
-        if member is None:
-            self.reservelist = [m for m in self.reservelist if m.boss != boss]
-        else:
-            self.reservelist = [m for m in self.reservelist if not (m.boss == boss and m.member == member)]
+    def RemoveReserve(self, func : Callable[[ReserveUnit], bool]):
+        self.reservelist = [m for m in self.reservelist if not func(m)]
 
     def RemoveReserveExpire(self):
         def Chk(boss):

@@ -286,6 +286,8 @@ class ClanMember():
                 if self.taskkill: s += '[tk]'
             elif c == 'o':
                 s += self.AttackTag()
+            elif c == 'O':
+                s += '[' + self.AttackTag() + ']'
             else: s += c
 
         return s
@@ -379,8 +381,17 @@ class ClanMember():
         if 0 < len(ret):
             self.history.remove(ret[0])
             self.Attack(ret[0].boss, ret[0].sortie)
+            self.CreateAttackTime()
             return ret[0]
         return None
+
+    def CalcAttackTime(self, sortie : int):
+        history = [m for m in self.history if m.sortie == sortie]
+        if len(history) == 0: return None
+        return min([h.overtime for h in history])
+
+    def CreateAttackTime(self):
+        self.attacktime = [self.CalcAttackTime(i) for i in range(MAX_SORITE)]
 
     def DayFinish(self):
         for t in self.attacktime:
@@ -551,7 +562,7 @@ class DamageControl():
             if m.status == 0:
                 attackmember.discard(m.member)
 
-                mes += '\n%s %d' % (m.member.DecoName('n[o]'), m.damage)
+                mes += '\n%s %d' % (m.member.DecoName('nOT'), m.damage)
                 if self.remainhp <= m.damage:
                     mes += ' %d秒' % (self.OverTime(self.remainhp, m.damage, m.member.IsOverkill()))
                 else :
@@ -561,13 +572,13 @@ class DamageControl():
                     else:
                         mes += '  残り %d' % (self.remainhp - m.damage)
         
-        finishmember = [m.member.DecoName('n[o]') for m in damagelist if m.status != 0]
+        finishmember = [m.member.DecoName('nOT') for m in damagelist if m.status != 0]
 
         if 0 < len(finishmember):
             mes += '\n通過済み %s' % (' '.join(finishmember))
 
         if 0 < len(attackmember):
-            mes += '\n未報告 %s' % (' '.join([m.DecoName('n[o]') for m in attackmember]))
+            mes += '\n未報告 %s' % (' '.join([m.DecoName('nOT') for m in attackmember]))
         return mes
 
     async def SendResult(self):
@@ -770,8 +781,9 @@ class Clan():
             (['defeat'], self.Defeat),
             (['undefeat'], self.Undefeat),
             (['setboss'], self.SetBoss),
-            (['unreserve', '予約消'], self.Unreserve),
+            (['unreserve', '予約取り消し', '予約取消'], self.Unreserve),
             (['reserve', '予約'], self.Reserve),
+            (['unplace', '配置取り消し', '配置取消'], self.Unplace),
             (['place', '配置'], self.Place),
 #            (['recruit', '募集'], self.Recruit),
             (['refresh'], self.Refresh),
@@ -789,7 +801,7 @@ class Clan():
 #            (['attacklog'], self.AttackLog),
             (['score'], self.Score),
             (['settingreload'], self.SettingReload),
-            (['delete'], self.MemberDelete),
+            (['memberdelete'], self.MemberDelete),
             (['dailyreset'], self.DailyReset),
             (['monthlyreset'], self.MonthlyReset),
             (['bossname'], self.BossName),
@@ -1239,7 +1251,10 @@ class Clan():
             comment = strarray[1]
 
         self.AddReserve(route, member, comment)
-        
+
+        routestr = [('%d-%d' % (m // BOSSNUMBER + 1, m % BOSSNUMBER +1)) for m in route]
+        self.TemporaryMessage(message.channel, '%sの予約を入れました' % (','.join(routestr)))
+
         return True
 
     async def Unreserve(self, message, member : ClanMember, opt : str):
@@ -1266,8 +1281,53 @@ class Clan():
         
         route = self.RouteAnalyze(strarray[0])
 
-        if 1 < len(strarray):
-            comment = strarray[1]
+        if len(route) == 0:
+            self.TemporaryMessage(message.channel, 'ルートが有りません'))
+            return False        
+
+        if 2 <= len(strarray):
+            addmember = [self.FindMember(name) for name in strarray[1:]]
+            addmember = [m for m in addmember if m is not None]
+        else:
+            addmember = []
+
+        if len(addmember) == 0:
+            self.TemporaryMessage(message.channel, 'メンバーがいません'))
+            return False        
+
+        for m in addmember:
+            self.AddReserve(route, m, None)
+
+        routestr = [('%d-%d' % (m // BOSSNUMBER + 1, m % BOSSNUMBER +1)) for m in route]
+        self.TemporaryMessage(message.channel, '%sに%sを追加しました' % (','.join(routestr), ' '.join([m.name for m in addmember])))
+
+        return True
+
+    async def Unplace(self, message, member : ClanMember, opt : str):
+        strarray = opt.split(' ')
+
+        if strarray[0] == 'all':
+            route = None
+        else:
+            route = self.RouteAnalyze(strarray[0])
+            if len(route) == 0:
+                self.TemporaryMessage(message.channel, 'ルートが有りません'))
+                return False        
+
+        if 2 <= len(strarray)strarray[1]
+
+        addmember = [self.FindMember(name) for name in strarray[1:]]
+        addmember = [m for m in addmember if m is not None]
+
+        if len(addmember) == 0:
+            self.TemporaryMessage(message.channel, 'メンバーがいません'))
+            return False        
+
+        for m in addmember:
+            self.AddReserve(route, m, None)
+
+        routestr = [('%d-%d' % (m // BOSSNUMBER + 1, m % BOSSNUMBER +1)) for m in route]
+        self.TemporaryMessage(message.channel, '%sに%sを追加しました' % (','.join(routestr), ' '.join([m.name for m in addmember])))
 
         return True
 
@@ -1839,6 +1899,7 @@ class Clan():
                     bidx = int(a[1]) - 1
                     
                     if 0 <= bidx and bidx < BOSSNUMBER:
+                        if lap < 0: lap = self.bosscount[bidx]
                         return [lap * BOSSNUMBER + bidx]
                     else:
                         raise ValueError
@@ -2104,7 +2165,7 @@ class Clan():
         s = '攻撃中\n'
         for at in attacklist:
             if 0 < len(at):
-                namelist = [m.DecoName('n[o]') for m in at]
+                namelist = [m.DecoName('nOT') for m in at]
                 s += '%s %d人 %s\n' % (self.numbermarks[at[0].boss % BOSSNUMBER + 1], len(at), ' '.join(namelist))
 
         return s
@@ -2161,7 +2222,7 @@ class Clan():
         for i, mem in enumerate(fulllist):
             if 0 < len(mem):
                 s += '残%d凸 %d人\n' % (MAX_SORITE - i, len(mem))
-                s += '  '.join([m.DecoName('n[o]') for m in mem]) + '\n'
+                s += '  '.join([m.DecoName('nOT') for m in mem]) + '\n'
         
         unfinish = sum([len(m) for m in fulllist])
         if len(self.members) != unfinish:
@@ -2170,7 +2231,7 @@ class Clan():
         return s
 
     def StatusReserveBoss(self, boss : int, members : List[ReserveUnit]):
-        result = '%d-%d %s\n' % (boss // BOSSNUMBER + 1, boss % BOSSNUMBER + 1, '  '.join([m.member.DecoName('n[o]') for m in members]) )
+        result = '%d-%d %s\n' % (boss // BOSSNUMBER + 1, boss % BOSSNUMBER + 1, '  '.join([m.member.DecoName('nO') for m in members]) )
 
         return result
 
@@ -2206,8 +2267,7 @@ class Clan():
         s += self.StatusAttack()
         s += self.StatusOverkill()
 
-        s += '\n'
-        s += self.StatusMemberList()
+        s += '\n' + self.StatusMemberList()
 
         reserve = self.StatusReserve()
         if 0 < len(reserve):

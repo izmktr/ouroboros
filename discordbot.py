@@ -40,9 +40,9 @@ SETTINGFILE = 'setting.json'
 BossLapScore = []
 for l in BossHpData:
     lapscore = 0
-    for i in l:
-        lapscore += i[0] * i[1]
-        i.append(i[0] * i[1])
+    for _i in l:
+        lapscore += _i[0] * _i[1]
+        _i.append(_i[0] * _i[1])
     BossLapScore.append(lapscore)
 
 from re import match, split
@@ -75,7 +75,7 @@ intents.typing = False  # typingを受け取らないように
 intents.members = True  # membersを受け取る
 client = discord.Client(intents=intents)
 
-clanhash: Dict[int, Any] = {}
+clanhash: Dict[int, 'Clan'] = {}
 
 def sign(n : int):
     if n < 0 : return -1
@@ -220,41 +220,42 @@ class AttackHistory():
             dic[key] = self.__dict__[key]
         return dic
 
+class MessageReaction():
+    def __init__(self, member) -> None:
+        self.member = member
+        self.addreaction = None
+        self.removereaction = None
+        self.deletereaction = None
+
 class ClanMember():
-
-    selializemember = [
-        'attack', 
-        'name', 
-        'taskkill', 
-        'boss', 
-        'notice', 
-        ]
-
-    def __init__(self):
-        self.attack = -1
-        self.reportlimit = None
+    def __init__(self, id):
+        self.id = id
         self.name = ''
+        self.mention = ''
         self.taskkill = 0
         self.history : List[AttackHistory] = []
         self.attacktime = [None] * MAX_SORITE
-        self.defeattimelist = []
+
+        self.sortie = -1
         self.boss = 0
-        self.notice = None
-        self.mention = ''
-        self.route = []
         self.attackmessage: Optional[discord.Message] = None
+        self.reportlimit = None
+
         self.lastactive = datetime.datetime.now() + datetime.timedelta(days = -1)
 
-    def CreateHistory(self, messageid, bosscount, overtime, defeat, sotiecount):
-        h = AttackHistory(messageid, 0, bosscount, overtime, defeat, sotiecount)
+    def CreateHistory(self, messageid, sortie, boss, overtime, defeat, sotiecount):
+        h = AttackHistory(messageid, sortie, boss, overtime, defeat, sotiecount)
         h.TimeStamping()
         self.history.append(h)
 
-    def Attack(self, clan, bossindex : int, first : bool):
-        self.attack = -1
+    def Attack(self, bossindex : int, sortie : int):
+        self.sortie = sortie
         self.reportlimit = datetime.datetime.now() + datetime.timedelta(minutes = 30)
-
         self.boss = bossindex
+        self.History
+
+    def IsAttack(self):
+        return self.sortie != -1
 
     #未凸数
     def FirstSoriteNum(self):
@@ -291,42 +292,34 @@ class ClanMember():
 
     #便宜上凸数
     def SortieCount(self):
-        count = 0
-        for h in self.history:
-            count += h.sortiecount
-
-        if MAX_SORITE <= count:
-            return MAX_SORITE
-        return count
+        return MAX_SORITE - self.FirstSoriteNum()
     
     def AttackCharactor(self, at : Optional[int]):
         if at is None : return 'o'
         if at == 0 : return 'x'
-        return '%d' % at
+        return '%d' % (at // 10)
 
     def AttackTag(self):
         return ''.join([self.AttackCharactor(m) for m in self.attacktime])
     
-    def Finish(self, clan, messageid, defeat = False, sortiecount = 1.0):
-        self.attack = -1
+    def Finish(self, messageid, defeat = False, sortiecount = 1.0):
+        self.CreateHistory(messageid, self.sortie, self.boss, 0, defeat, sortiecount)
+        self.attacktime[self.sortie] = 0
+        self.sortie = -1
         self.reportlimit = None
-        self.CreateHistory(messageid, self.boss, 0, defeat, sortiecount)
     
-    def Cancel(self, clan):
-        self.attack = False
+    def Cancel(self):
+        self.sortie = -1
         self.reportlimit = None
 
-    def Overkill(self, clan, overtime, messageid):
-        self.attack = False
+    def Overkill(self, messageid, overtime):
+        self.CreateHistory(messageid, self.sortie, self.boss, overtime, True, 0.5)
+        self.attacktime[self.sortie] = overtime
+        self.sortie = -1
         self.reportlimit = None
-        self.CreateHistory(messageid, self.boss, overtime, True, 0.5)
 
     def Overtime(self, sortie):
-        for m in self.history:
-            if m.sortie == sortie:
-                return m.overtime
-
-        return 0
+        return self.attacktime[sortie]
 
     def MessageChcck(self, messageid):
         for h in self.history:
@@ -335,27 +328,19 @@ class ClanMember():
         return False
 
     def Reset(self):
-        self.attack = -1
+        self.sortie = -1
         self.reportlimit = None
         self.taskkill = 0
+        self.attacktime = [None] * MAX_SORITE
         self.history.clear()
-        self.notice = None
-
-    def AttackName(self):
-        s = self.name
-        if self.IsOverkill():
-            s += "[o%d]" % (self.Overtime() // 10)
-        if self.taskkill != 0:
-            s += "[tk]"
-        return s
 
     def History(self):
         str = ''
         count = 1
         for h in self.history:
             str += '%d回目 %d周目:%s' % (count,
-            h.bosscount // BOSSNUMBER + 1, 
-            BossName[h.bosscount % BOSSNUMBER])
+            h.boss // BOSSNUMBER + 1, 
+            BossName[h.boss % BOSSNUMBER])
 
             if h.defeat:
                 str += ' %d秒' % (h.overtime)
@@ -366,6 +351,12 @@ class ClanMember():
                 count += 1
         if str == '' : str = '履歴がありません'
         return str
+
+    selializemember = [
+        'name', 
+        'taskkill', 
+        'attacktime', 
+        ]
 
     def Serialize(self):
         ret = {}
@@ -387,15 +378,18 @@ class ClanMember():
     def Revert(self, messageid):
         if len(self.history) == 0: return None
 
-        ret = self.history[-1]
-        if ret.messageid == messageid:
-            self.history.pop(-1)
-            self.boss = ret.bosscount
-            return ret
+        ret = [m for m in self.history if m.messageid == messageid]
+        if 0 < len(ret):
+            self.history.remove(ret[0])
+            self.Attack(ret[0].boss, ret[0].sortie)
+            return ret[0]
         return None
 
     def DayFinish(self):
-        return self.SortieCount() == MAX_SORITE
+        for t in self.attacktime:
+            if t is None or 0 < t: return False
+        
+        return True
     
     def UpdateActive(self):
         self.lastactive = datetime.datetime.now()
@@ -533,7 +527,7 @@ class DamageControl():
         damagelist = sorted([value for value in self.members.values()], key=cmp_to_key(Compare)) 
         totaldamage = sum([n.damage for n in damagelist])
 
-        attackmember = set([m for m in self.clanmembers.values() if m.attack])
+        attackmember = set([m for m in self.clanmembers.values() if m.IsAttack()])
 
         mes += '%s HP %d' % (BossName[self.bossindex] , self.remainhp)
         if 0 < totaldamage and totaldamage < self.remainhp:
@@ -618,10 +612,32 @@ class DamageControl():
             self.outputlock = 0
 
 class ReserveUnit:
-   def __init__(self, boss: int, member: ClanMember, comment : Optional[str]):
+    def __init__(self, boss: int, member: ClanMember, comment : Optional[str]):
        self.boss = boss
        self.member = member
        self.comment = comment
+
+    @staticmethod
+    def Deserialize(dic : Dict,  members : Dict[int, ClanMember]):
+        if 'boss' not in dic: return None
+        boss = dic['boss']
+
+        if 'member' not in dic: return None
+        mid = dic['member']
+        if mid not in members: return None
+        member = members[mid]
+
+        if 'comment' not in dic: return None
+        comment = dic['comment']
+
+        return ReserveUnit(boss, member, comment)
+
+    def Serialize(self):
+        return {
+            'boss' : self.boss,
+            'comment' : self.comment,
+            'member' : self.member.id,
+        }
 
 class Clan():
     numbermarks = [
@@ -663,12 +679,11 @@ class Clan():
         self.lastmessage : Optional[discord.Message] = None
         self.stampcheck :Dict[str, Any] = {}
         self.beforesortie = 0
-        self.bossLap = 0
+        self.bosscount = [0] * BOSSNUMBER
         self.lapAttackCount = []
         self.bossAttackCount = []
         self.defeatTime = []
         self.namedelimiter = ''
-        self.bossdead = set()
         self.reservelist : List[ReserveUnit] = []
 
         self.guild : discord.Guild = None
@@ -682,12 +697,74 @@ class Clan():
         self.outputlock = 0
         self.lapplayer = 0
 
+        self.messagereaction : Dict[int, MessageReaction] = {}
+
         self.commandlist = self.FuncMap()
+
+    def Save(self, clanid : int):
+        dic = {
+            'members': {},
+            'bosscount' : self.bosscount,
+            'channelid' : self.channelid,
+            'beforesortie' : self.beforesortie,
+            'lapAttackCount' : self.lapAttackCount,
+            'bossAttackCount' : self.bossAttackCount,
+            'defeatTime' : self.defeatTime,
+ 
+            'namedelimiter' : self.namedelimiter,
+            'admin' : self.admin,
+            'reservelist': [m.Serialize() for m in self.reservelist],
+        }
+
+        for mid, member in self.members.items():
+            dic['members'][mid] = member.Serialize()
+
+        with open('clandata/%d.json' % (clanid) , 'w') as a:
+            json.dump(dic, a , indent=4)
+
+    @staticmethod
+    def Load(clanid : int):
+        with open('clandata/%d.json' % (clanid)) as a:
+            mdic =  json.load(a)
+
+            clan = Clan(mdic['channelid'])
+            clan.bosscount = mdic['bosscount']
+            clan.namedelimiter = mdic['namedelimiter'] if 'namedelimiter' in mdic else None
+
+            if 'beforesortie' in mdic:
+                clan.beforesortie = mdic['beforesortie']
+
+            if 'lapAttackCount' in mdic:
+                clan.lapAttackCount = mdic['lapAttackCount']
+
+            if 'bossAttackCount' in mdic:
+                clan.bossAttackCount = mdic['bossAttackCount']
+
+            if 'defeatTime' in mdic:
+                clan.defeatTime = mdic['defeatTime']
+
+            if 'admin' in mdic:
+                clan.admin = mdic['admin']
+
+            for mid, dicmember in mdic['members'].items():
+                member = ClanMember(int(mid))
+                member.Deserialize(dicmember)
+                clan.members[int(mid)] = member
+
+            if 'reservelist' in mdic:
+                for x in mdic['reservelist']:
+                    reunit = ReserveUnit.Deserialize(x, clan.members)
+                    if reunit is not None:
+                        clan.reservelist.append(reunit)
+
+
+            return clan
 
     def FuncMap(self):
         return [
             (['a', '凸'], self.Attack),
             (['c', '持'], self.ContinuesAttack),
+            (['cancel'], self.Cancel),
             (['reload'], self.Reload),
             (['taskkill', 'タスキル'], self.TaskKill),
             (['memo', 'メモ'], self.Memo),
@@ -733,7 +810,7 @@ class Clan():
     def GetMember(self, author) -> ClanMember:
         member = self.members.get(author.id)
         if member is None:
-            member = ClanMember()
+            member = ClanMember(author.id)
             self.members[author.id] = member
         member.name = self.DelimiterErase(author.display_name)
         member.mention = author.mention
@@ -767,15 +844,17 @@ class Clan():
 
     def FullReset(self):
         self.Reset()
-        self.bossLap = 0
+        self.bosscount = [0] * BOSSNUMBER
         self.beforesortie = 0
-        self.bossdead = {}
         self.defeatTime.clear()
 
     def Reset(self):
         self.beforesortie = self.TotalSortie()
         self.lastmessage = None
-        self.stampcheck = {}
+        self.stampcheck.clear()
+        self.messagereaction.clear()
+        self.reservelist.clear()
+
         for member in self.members.values():
             member.Reset()
 
@@ -872,34 +951,161 @@ class Clan():
         return True
 
     def AttackNum(self, bossindex):
-        return len([m for m in self.members.values() if m.attack and m.boss == bossindex])
+        return len([m for m in self.members.values() if m.IsAttack() and m.boss == bossindex])
+
+    def CreateNotice(self, lap, bidx):
+        pickuplap = [None] * BOSSNUMBER
+        message = []
+
+        pickuplap[bidx] = self.bosscount[bidx]
+
+        if lap is not None:
+            if lap + 1 in LevelUpLap:
+                pickuplap = [lap + 1] * BOSSNUMBER
+            else:
+                for bidx in range(BOSSNUMBER):
+                    if self.bosscount[bidx] == lap + 1:
+                        pickuplap[bidx] = lap + 1
+
+        for bidx in range(BOSSNUMBER):
+            if pickuplap[bidx] is not None:
+                boss = pickuplap[bidx] * BOSSNUMBER + bidx
+                mention = [m.member.mention for m in self.reservelist if m.boss == boss]
+
+                if 0 < len(mention):
+                    message.append('%s %sがやってきました' % (' '.join(mention), BossName[bidx]))
+
+        if 0 < len(message):
+            return '\n'.join(message)
+
+        return None
+
+    def IsAttackableBoss(self, bidx : int):
+        minlap = self.MinLap()
+        lapsub = self.bosscount[bidx] - minlap
+        if 2 <= lapsub: return False
+        if lapsub == 1 and minlap + 2 in LevelUpLap: return False
+        return True
+
+    async def AttackCheck(self, message, member : ClanMember, bidx : int):
+        if self.CheckInputChannel(message):
+            self.TemporaryMessage(message.channel, '%s のチャンネルで発言してください' % inputchannel)
+            return True
+
+        if not self.IsAttackableBoss(bidx):
+            self.TemporaryMessage(message.channel, '攻撃できないボスです')
+            return True
+
+        if member.IsAttack():
+            self.TemporaryMessage(message.channel, 'すでに凸があります 前の凸を無効にするにはcancelと入力してください')
+            return True
+
+        return False
+
+    def CreateAttackReaction(self, atmember : ClanMember, message, boss : int, sortie : int, overtime : int):
+        react = MessageReaction(atmember)
+
+        async def addreaction(member : ClanMember, payload):
+            if member != atmember:
+                return False
+
+            idx = self.emojiindex(payload.emoji.name)
+            if idx is None:
+                return False
+
+            v = self.AddStamp(payload.message_id)
+            if v != 1:
+                Outlog(ERRFILE, "self.AddStamp" + " " + v)
+                return False
+
+            if idx == 0:
+                member.Finish(payload.message_id)
+                self.RemoveReserve(boss, member)
+
+                await self.damagecontrol[boss % BOSSNUMBER].Injure(member)
+            
+            if 1 <= idx and idx <= 8:
+                if 0 < overtime:
+                    member.Finish(payload.message_id, True, 0.5)
+                else:
+                    member.Overkill(payload.message_id, (idx + 1) * 10)
+
+                bidx = boss % BOSSNUMBER
+                newlap = self.DefeatBoss(bidx)
+                mention = self.CreateNotice(newlap, bidx)
+
+                if mention is not None:
+                    await message.channel.send(mention)
+
+                for m in self.members.values():
+                    if m.IsAttack() and m.boss == boss:
+                        m.reportlimit = datetime.datetime.now() + datetime.timedelta(minutes = 5)
+            
+            if idx == 9:
+                member.Cancel()
+                await self.damagecontrol[boss % BOSSNUMBER].Remove(member)
+
+            await self.RemoveReaction(message, 0 < overtime, message.guild.me)
+            return True
+
+        react.addreaction = addreaction
+
+        async def removereaction(member : ClanMember, payload):
+            if member != atmember:
+                return False
+
+            idx = self.emojiindex(payload.emoji.name)
+            if idx is None:
+                return False
+
+            v = self.RemoveStamp(payload.message_id)
+            if v != 0:
+                return False
+
+            if member.attackmessage is not None and member.attackmessage.id == payload.message_id:
+                if idx == 9:
+                    member.Attack(boss, sortie)
+                    await self.AddReaction(message, 0 < overtime)
+                    return True
+
+                data = member.Revert(payload.message_id)
+                if data is not None:
+                    member.Attack(data.boss, data.sortie)
+                    if data.defeat:
+                        bossidx = data.boss % BOSSNUMBER
+                        self.UndefeatBoss(bossidx)
+                        self.TemporaryMessage(self.inputchannel, '巻き戻しました\nボスが違うときは、defeat/undefeat/setbossで調整してください')
+                    
+                    await self.AddReaction(message, 0 < overtime)
+
+                    return True
+                else:
+                    self.TemporaryMessage(self.inputchannel, '巻き戻しに失敗しました')
+
+        react.removereaction = removereaction
+
+        return react
 
     async def Attack(self, message, member : ClanMember, opt):
-        if self.CheckInputChannel(message):
-            await message.channel.send('%s のチャンネルで発言してください' % inputchannel)
-            return False
-
         try:
             bidx = int(opt) - 1
             if bidx < 0 or BOSSNUMBER <= bidx:
                 raise ValueError
         except ValueError:
-            await message.channel.send('凸5 のように発言してください')
+            self.TemporaryMessage(message.channel, '凸5 のように発言してください')
             return False
 
-        if bidx in self.bossdead:
-            await message.channel.send('%s は討伐済みです' % BossName[bidx])
+        error = await self.AttackCheck(message, member, bidx)
+        if error:
             return False
-
-        tmpattack = member.attackmessage if member.attack else None
-
-        bosscount = self.bossLap * BOSSNUMBER + bidx
 
         if member.FirstSoriteNum() == 0:
-            await message.channel.send('新規凸がありません')
+            self.TemporaryMessage(message.channel, '新規凸がありません')
             return False
 
-        member.Attack(self, bosscount, True)
+        boss = self.bosscount[bidx] * BOSSNUMBER + bidx
+
+        member.Attack(boss, self.SortieCount())
 
         if member.taskkill != 0:
             await message.add_reaction(self.taskkillmark)
@@ -907,41 +1113,55 @@ class Clan():
         member.attackmessage = message
         await self.AddReaction(message, False)
 
+        self.messagereaction[message.id] = self.CreateAttackReaction(member, message, boss, member.SortieCount(), 0)
+
         return True
 
+
     async def ContinuesAttack(self, message, member : ClanMember, opt):
-        if self.CheckInputChannel(message):
-            await message.channel.send('%s のチャンネルで発言してください' % inputchannel)
+        if opt == '':
+            overlist = [(idx + 1, time) for idx, time in enumerate(member.attacktime) if time is not None and 0 < time]
+
+            if 0 < len(overlist):
+                self.TemporaryMessage(message.channel, '\n'.join([('%d: %d秒' % (m[0], m[1])) for m in overlist]))
+            else:
+                self.TemporaryMessage(message.channel, '持ち越しが有りません')
             return False
 
         try:
-            bidx = int(opt) - 1
-            if bidx < 0 or BOSSNUMBER <= bidx:
+            num = int(opt)
+            bidx = num // 10 - 1
+            sortie = num % 10 - 1 
+            if bidx < 0 or BOSSNUMBER <= bidx or sortie < 0 or MAX_SORITE <= sortie:
                 raise ValueError
         except ValueError:
-            await message.channel.send('持51 のように発言してください')
+            self.TemporaryMessage(message.channel, '持52 のように発言してください')
             return False
 
-        if bidx in self.bossdead:
-            await message.channel.send('%s は討伐済みです' % BossName[bidx])
+        if member.attacktime[sortie] is None or member.attacktime[sortie] == 0:
+            self.TemporaryMessage(message.channel, '持ち越しではありません')
             return False
 
-        attacknum = 0
-        if member.RemainTime(attacknum) <= 0:
-            await message.channel.send('すでに凸済みです')
+        error = await self.AttackCheck(message, member, bidx)
+        if error:
             return False
 
-        tmpattack = member.attackmessage if member.attack else None
+        boss = self.bosscount[bidx] * BOSSNUMBER + bidx
 
-        bosscount = self.bossLap * BOSSNUMBER + bidx
-
-        member.Attack(self, bosscount, False)
+        member.Attack(boss, sortie)
+        self.messagereaction[message.id] = self.CreateAttackReaction(member, message, boss, sortie, member.attacktime[sortie])
 
         if member.taskkill != 0:
             await message.add_reaction(self.taskkillmark)
 
         member.attackmessage = message
         await self.AddReaction(message, True)
+
+        return True
+
+    async def Cancel(self, message, member : ClanMember, opt):
+        if member.IsAttack():
+            member.Cancel()
 
         return True
 
@@ -962,18 +1182,13 @@ class Clan():
             self.TemporaryMessage(message.channel, '数値エラー')
             return False
 
-        if bidx in self.bossdead:
-            self.TemporaryMessage(message.channel, '討伐済みボスです')
-            return False
-
         newlap = self.DefeatBoss(bidx)
-        if newlap is not None:
-            self.TemporaryMessage(message.channel, 'すべてのボスが倒されたので、%d周目に入りました' % (newlap + 1))
-            mention = self.CreateNotice(newlap)
-            if mention is not None:
-                await self.inputchannel.send('%s %d周目がやってきました' % (mention, newlap + 1))
-        else:
-            self.TemporaryMessage(message.channel, '%d:%s を討伐済みにしました' % (bidx + 1, BossName[bidx]))
+        mention = self.CreateNotice(newlap, bidx)
+
+        if mention is not None:
+            await message.channel.send(mention)
+            
+        self.TemporaryMessage(message.channel, '%d:%s を討伐済みにしました' % (bidx + 1, BossName[bidx]))
 
         return True
 
@@ -984,10 +1199,6 @@ class Clan():
                 raise ValueError
         except ValueError:
             self.TemporaryMessage(message.channel, '数値エラー')
-            return False
-
-        if 0 < len(self.bossdead) and bidx in self.bossdead:
-            self.TemporaryMessage(message.channel, '討伐されていないボスです')
             return False
 
         newlap = self.UndefeatBoss(bidx)
@@ -1005,58 +1216,19 @@ class Clan():
     async def SetBoss(self, message, member : ClanMember, opt):
         try:
             sp = opt.split(' ')
-            lap = int(sp[0]) - 1
-            boss = int(sp[1]) if 2 <= len(sp) else 12345
-
-            if lap <= 0:
+            if len(sp) != BOSSNUMBER:
                 raise ValueError
 
-            bossalive = set()
-            while 0 < boss:
-                bidx = boss % 10 - 1
-                if 0 <= bidx and bidx < BOSSNUMBER:
-                    bossalive.add(bidx)
-                else:
-                    raise ValueError
-                boss = boss // 10
-
-            self.bossLap = lap
-            self.bossdead = self.BossReverse(bossalive)
-
-            await message.channel.send('%d 周目 生存ボス%sに設定しました' % (lap + 1, self.AliveBossString()))
+            self.bosscount = [int(s) - 1 for s in sp]
+            await message.channel.send('ボスを設定しました')
         except ValueError:
             await message.channel.send('数値エラー')
 
         return True
 
     async def Memo(self, message, member : ClanMember, opt):
-        member.SetMemo(opt)
         return True
 
-    async def Notice(self, message, member : ClanMember, opt : str):
-        try:
-            if opt == '':
-                member.notice = self.bossLap + 1
-            else:
-                lap = int(opt) - 1
-                if lap <= 0:
-                    member.notice = None
-                else:
-                    member.notice = lap
-        except ValueError:
-            if member.notice is None:
-                self.TemporaryMessage(message.channel, '通知はありません')
-            else:
-                self.TemporaryMessage(message.channel, '%d周目の通知が入っています' % (member.notice + 1))
-            return False
-
-        if member.notice is None:
-            self.TemporaryMessage(message.channel, '通知を消しました')
-        else:
-            self.TemporaryMessage(message.channel, '%d周目の通知を設定しました\n通知を消すときは「通知 0」と入力してください' % (member.notice + 1))
-
-        return False
-    
     async def Reserve(self, message, member : ClanMember, opt : str):
         strarray = opt.split(' ')
 
@@ -1320,7 +1492,6 @@ class Clan():
             self.TemporaryMessage(channel, 'usage) team 1/20,1/30')
             return
 
-        global BATTLEPRESTART
         global BATTLESTART
         global BATTLEEND
 
@@ -1328,7 +1499,6 @@ class Clan():
             start = datetime.datetime.strptime(team[0], '%m/%d')
             end = datetime.datetime.strptime(team[1], '%m/%d')
 
-            BATTLEPRESTART = (start + datetime.timedelta(days = -1)).strftime('%m/%d')
             BATTLESTART = start.strftime('%m/%d')
             BATTLEEND = end.strftime('%m/%d')
 
@@ -1348,7 +1518,7 @@ class Clan():
         for guild in client.guilds:
             clan = clanhash.get(guild.id)
             if clan is not None:
-                attackmembers = [m.name for m in clan.members.values() if m.attack]
+                attackmembers = [m.name for m in clan.members.values() if m.IsAttack()]
                 atn = len(attackmembers)
                 if 0 < atn:
                     mes += '[%s] %d %s\n' % (guild.name, atn, ' '.join(attackmembers))
@@ -1470,7 +1640,7 @@ class Clan():
         global clanhash
 
         for clan in clanhash.values():
-            if clan.bosscount == 0:
+            if clan.lap == 0:
                 server.append(clan.guild)
 
         for clan in server:
@@ -1534,7 +1704,7 @@ class Clan():
             self.TemporaryMessage(message.channel, 'このチャンネルでは使えません')
             return False
         
-        if not member.attack:
+        if not member.IsAttack():
             self.TemporaryMessage(message.channel, '攻撃中ではありません')
             return False
         
@@ -1626,14 +1796,40 @@ class Clan():
 
         return False
 
-    def RouteAnalyze(self, str : str):
+    def RouteAnalyze(self, routestr : str):
+        result = []
+        addroute = 1
+        try:
+            if 0 <= routestr.find('-'):
+                a = routestr.split('-')
+                if 2 <= len(a):
+                    lap = int(a[0]) - 1
+                    bidx = int(a[1]) - 1
+                    
+                    if 0 <= bidx and bidx < BOSSNUMBER:
+                        return [lap * BOSSNUMBER + bidx]
+                    else:
+                        raise ValueError
 
-        if re.match('%d+\-%d+', str):
-            
-            return [1]
-        
-        if re.match('\++%d+', str):
-            return [1]
+                return None
+
+            while 0 < len(routestr) and routestr[0] == '+':
+                addroute += 1
+                routestr = routestr[1:]
+
+            route = int(routestr)
+            while 0 < route:
+                bidx = route % 10 - 1
+                if 0 <= bidx and bidx < BOSSNUMBER:
+                    result.append(bidx + (self.bosscount[bidx] + addroute) * BOSSNUMBER)
+                    route = route // 10
+                else:
+                    raise ValueError
+
+            return result
+
+        except ValueError:
+            pass
 
         return None
 
@@ -1674,7 +1870,7 @@ class Clan():
             member.UpdateActive()
 
             # 自動ダメコン計算
-            if member.attack:
+            if member.IsAttack():
                 damagecontrol = self.damagecontrol[member.boss % BOSSNUMBER]
                 if damagecontrol.active and damagecontrol.channel == message.channel:
                     try:
@@ -1696,12 +1892,17 @@ class Clan():
         if member is None: return False
 
         if member.Revert(payload.message_id) is not None:
-            member.Cancel(self)
+            member.Cancel()
             return True
 
         if member.taskkill == payload.message_id:
             member.taskkill = 0
             return True
+
+        if payload.message_id in self.messagereaction:
+            func = self.messagereaction[payload.message_id]
+            if func.deletereaction is not None:
+                return await func.deletereaction(member, payload)
 
         return False
 
@@ -1714,17 +1915,6 @@ class Clan():
                 return idx
         return None
 
-    def CreateNotice(self, lap):
-        notice = []
-        for member in self.members.values():
-            if member.notice == lap:
-                notice.append(member.mention)
-
-        if len(notice) == 0:       
-            return None
-        else:
-            return ' '.join(notice)
-
     @staticmethod
     def FillList(list : List, count : int, data):
         l = len(list)
@@ -1736,6 +1926,7 @@ class Clan():
         now = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
         self.FillList(self.defeatTime, count + 1, now)
         self.defeatTime[count] = now
+    
     def BossCount(self, bossindex :int):
         return self.bossLap * BOSSNUMBER + bossindex
 
@@ -1743,65 +1934,12 @@ class Clan():
         member : ClanMember = self.members.get(payload.user_id)
         if member is None:
             return False
-
-        if self.inputchannel is None or self.inputchannel.id != payload.channel_id:
-            return False
-
-        if member.attackmessage is None or member.attackmessage.id != payload.message_id:
-            return False
-
-        idx = self.emojiindex(payload.emoji.name)
-        if idx is None:
-            return False
-
-        v = self.AddStamp(payload.message_id)
-        if v != 1:
-            Outlog(ERRFILE, "self.AddStamp" + " " + v)
-            return False
-
-        if member.MessageChcck(payload.message_id):
-            Outlog(ERRFILE, "member.MessageChcck is none")
-            return False
-
-        overkill = True
-        boss = member.boss
-
-        if idx == 0:
-            member.Finish(self, payload.message_id)
-            member.notice = None
-
-            if boss // BOSSNUMBER != self.bossLap:
-                self.AddLapCount(boss // BOSSNUMBER)
-
-            await self.damagecontrol[boss % BOSSNUMBER].Injure(member)
         
-        if 1 <= idx and idx <= 8:
+        if payload.message_id in self.messagereaction:
+            react = self.messagereaction[payload.message_id]
+            if react.addreaction is not None:
+                return await react.addreaction(member, payload)
 
-            if overkill:
-                member.Finish(self, payload.message_id, True, 0.5)
-            else:
-                member.Overkill(self, (idx + 1) * 10, payload.message_id)
-
-            member.notice = None
-
-            newlap = self.DefeatBoss(boss % BOSSNUMBER)
-
-            if newlap is not None:
-                self.TemporaryMessage(self.inputchannel, 'すべてのボスが倒されたので、%d周目に入りました' % (newlap + 1))
-                mention = self.CreateNotice(newlap)
-                if mention is not None:
-                    await self.inputchannel.send('%s %d周目がやってきました' % (mention, newlap + 1))
-
-            for m in self.members.values():
-                if m.attack and m.boss == boss:
-                    m.reportlimit = datetime.datetime.now() + datetime.timedelta(minutes = 5)
-        
-        if idx == 9:
-            member.Cancel(self)
-            await self.damagecontrol[boss % BOSSNUMBER].Remove(member)
-
-        message = member.attackmessage
-        await self.RemoveReaction(message, overkill, message.guild.me)
         return True
 
     async def on_raw_reaction_remove(self, payload):
@@ -1809,37 +1947,10 @@ class Clan():
         if member is None:
             return False
 
-        if self.inputchannel is None or self.inputchannel.id != payload.channel_id:
-            return False
-
-        idx = self.emojiindex(payload.emoji.name)
-        if idx is None:
-            return False
-
-        v = self.RemoveStamp(payload.message_id)
-        if v != 0:
-            return False
-
-        if member.attackmessage is not None and member.attackmessage.id == payload.message_id:
-            if idx == 9:
-                member.Attack(self, member.boss)
-#                await self.AddReaction(member.attackmessage, member.IsOverkill())
-                return True
-
-            data = member.Revert(payload.message_id)
-            if data is not None:
-                member.Attack(self, data.bosscount)
-                if data.defeat:
-                    boss = data.bosscount % BOSSNUMBER
-                    if boss in self.bossdead or len(self.bossdead) == 0:
-                        self.UndefeatBoss(boss)
-                        self.TemporaryMessage(self.inputchannel, '巻き戻しました\nボスが違うときは、defeat/undefeat/setbossで調整してください')
-                
-                await self.AddReaction(member.attackmessage, member.IsOverkill())
-
-                return True
-            else:
-                await self.TemporaryMessage(self.inputchannel, '巻き戻しに失敗しました')
+        if payload.message_id in self.messagereaction:
+            react = self.messagereaction[payload.message_id]
+            if react.removereaction is not None:
+                return await react.removereaction(member, payload)
 
         return False
                         
@@ -1900,58 +2011,66 @@ class Clan():
         if len(LevelUpLap) <= levelindex: return 0
         return (LevelUpLap[levelindex] - self.bossLap - 1)
 
-    def AliveBoss(self):
-        return self.BossReverse(self.bossdead)
+    def MinLap(self):
+        return min(self.bosscount)
 
     def DefeatBoss(self, bossindex : int):
-        self.bossdead.add(bossindex)
+        minlap = self.MinLap()
+        self.bosscount[bossindex] += 1
 
-        self.AddDefeatTime(self.bossLap * BOSSNUMBER + bossindex)
+        self.RemoveReserveExpire()
 
-        if BOSSNUMBER <= len(self.bossdead):
-            self.AddLapCount(self.bossLap)
-            self.bossdead.clear()
-            self.bossLap += 1
-            return self.bossLap
-        else:
-            return None
+        newlap = self.MinLap()
+        if minlap != newlap:
+            return newlap
+        return None
 
     def UndefeatBoss(self, bossindex : int):
-        if 0 < self.bossLap and len(self.bossdead) == 0:
-            self.bossdead = self.BossReverse({bossindex})
-            self.bossLap -= 1
-            return self.bossLap
-        else:
-            self.bossdead.discard(bossindex)
-            return None
+        if 0 < self.bosscount[bossindex]:
+            self.bosscount[bossindex] -= 1
 
     def AliveBossString(self):
-        return ''.join([self.numbermarks[m + 1] for m in self.AliveBoss()])
+        return ' '.join([self.numbermarks[m + 1] for m in self.AliveBoss()])
 
     def AddReserve(self, route : List[int], member : ClanMember, comment : str):
         for r in route:
             insertflag = True
             for m in self.reservelist:
                 # 前の周なら登録しない
-                if m.boss // BOSSNUMBER < self.bossLap: continue
+                bidx = m.boss % BOSSNUMBER
+                blap = m.boss // BOSSNUMBER
+                if blap < self.bosscount[bidx]: continue
 
                 if m.boss == r and m.member == member:
-                    self.reservelist = ReserveUnit(r, member, comment)
+                    m.SetComment(comment)
                     insertflag = False
                     break
             if insertflag:
                 self.reservelist.append(ReserveUnit(r, member, comment))
 
+    def RemoveReserve(self, boss : int, member : Optional[ClanMember]):
+        if member is None:
+            self.reservelist = [m for m in self.reservelist if m.boss != boss]
+        else:
+            self.reservelist = [m for m in self.reservelist if not (m.boss == boss and m.member == member)]
+
+    def RemoveReserveExpire(self):
+        def Chk(boss):
+            bidx = boss % BOSSNUMBER
+            return self.bosscount[bidx] <= boss // BOSSNUMBER
+
+        self.reservelist = [m for m in self.reservelist if Chk(m.boss)]
+
+
     def StatusAttack(self):
         attacklist : List[List[ClanMember]] = [ [] for _i in range(BOSSNUMBER) ]
         for member in self.members.values():
-            if member.attack:
-                if member.boss // BOSSNUMBER == self.bossLap:
-                    attacklist[member.boss % BOSSNUMBER].append(member)
+            if member.IsAttack():
+                bidx = member.boss % BOSSNUMBER
+                if member.boss // BOSSNUMBER == self.bosscount[bidx]:
+                    attacklist[bidx].append(member)
 
-        if sum([len(m) for m in attacklist]) == 0 : return s
-
-        print (attacklist)
+        if sum([len(m) for m in attacklist]) == 0 : return ''
 
         s = '攻撃中\n'
         for at in attacklist:
@@ -1961,119 +2080,110 @@ class Clan():
 
         return s
 
+    def NumberMark(self, l : List[int]):
+        return [self.numbermarks[i] for i in l]
+
+    def StatusBoss(self):
+        s = ''
+        minlap = self.MinLap()
+
+        bossmark = self.NumberMark([i + 1 for i in range(BOSSNUMBER) if self.bosscount[i] == minlap])
+        s += '%d周目 %s' % (minlap + 1, ' '.join(bossmark))
+
+        if (minlap + 2) in LevelUpLap:
+            return s + '\n'
+
+        bossmark = self.NumberMark([i + 1 for i in range(BOSSNUMBER) if self.bosscount[i] == minlap + 1])
+        if 0 < len(bossmark):
+            s += ' / %d周目 %s' % (minlap + 2, ' '.join(bossmark))
+
+        return s + '\n'
+
     def StatusOverkill(self):
         s = ''
-        oklist = [m for m in self.members.values() if m.IsOverkill()]
+        time = [0] * 4
+        tstr = ['フル', '長', '中', '短']
 
-        def Compare(a : ClanMember, b : ClanMember):
-            an = a.Overboss()
-            bn = b.Overboss()
-            if (an - bn) % BOSSNUMBER == 0: 
-                return sign(an - bn)
-            return sign(an % BOSSNUMBER) - (bn % BOSSNUMBER)
+        for m in self.members.values():
+            for t in m.attacktime:
+                if t is not None and 0 < t:
+                    if t == 90: time[0] += 1
+                    elif 70 < t: time[1] += 1
+                    elif 40 < t: time[2] += 1
+                    else: time[3] += 1
 
-        overkilllist = sorted(oklist, key=cmp_to_key(Compare))
-        oknum = len(overkilllist)
-
-        if 0 < oknum:
-            s += '持ち越し %d人\n' % (oknum)
-            s += ''.join(['%s\n' % m.OverKillMessage() for m in overkilllist])
+        if 0 < sum(time):
+            s += '持越 '
+            s += '  '.join(['%s:%d' % (tstr[i], time[i]) for i in range(4) if 0 < time[i] ])
+            s += '\n'
 
         return s
 
-    def StatusReserveBoss(self, lapdict : Dict[int, List[ReserveUnit]]):
-        if len(lapdict) < 0: return ''
+    def StatusMemberList(self):
+        s = ''
+        
+        fulllist : List[List[ClanMember]] = [[] for _i in range(MAX_SORITE + 1) ]
 
-        result = ''
-        for lap, members in lapdict.items:
-            result += '%d-%s %s\n' % (members[0].boss, (lap % BOSSNUMBER + 1), '  '.join([m.members for m in members]) )
+        for m in self.members.values():
+            if not m.DayFinish():
+                fulllist[m.SortieCount()].append(m)
+
+        for i, mem in enumerate(reversed(fulllist)):
+            if 0 < len(mem):
+                s += '残%d凸 %d人\n' % (i , len(mem))
+                s += '  '.join([m.DecoName('n[o]') for m in mem]) + '\n'
+        
+        unfinish = sum([len(m) for m in fulllist])
+        if len(self.members) != unfinish:
+            s += '完凸 %d人\n' % (len(self.members) - unfinish)
+        
+        return s
+
+    def StatusReserveBoss(self, boss : int, members : List[ReserveUnit]):
+        result = '%d-%d %s\n' % (boss // BOSSNUMBER + 1, boss % BOSSNUMBER + 1, '  '.join([m.member.DecoName('n[o]') for m in members]) )
 
         return result
 
     def StatusReserve(self):
-        result = ''
-        lapreserve : Dict[int, Dict[int, List[ReserveUnit]]] = {}
+        s = ''
+        lapreserve : Dict[int, List[ReserveUnit]] = {}
         for r in self.reservelist:
-            lap = r.boss // BOSSNUMBER
-            bossnum = r.boss % BOSSNUMBER
-            if lap in lapreserve:
-                if bossnum in lapreserve[lap]:
-                    lapreserve[lap][bossnum] = [r]
-                else:
-                    lapreserve[lap][bossnum].append(r)
+            if r.boss in lapreserve:
+                lapreserve[r.boss].append(r)
             else:
-                lapreserve = {bossnum: [r]}
+                lapreserve[r.boss] = [r]
 
-        for lap in lapreserve:
-#            maxreserve = max([len(m) for m in lap])
-            self.StatusReserveBoss(lap)
+        if 0 < len(lapreserve):
+            def Compare(a : int, b : int):
+                aidx = a % BOSSNUMBER
+                bidx = b % BOSSNUMBER
+                if aidx == bidx:
+                    return sign(a - b)
+                return sign(aidx - bidx)
+
+            bosslist = sorted(lapreserve.keys(), key=cmp_to_key(Compare))
+
+            s += '予約リスト\n'
+            for lap in bosslist:
+                s += self.StatusReserveBoss(lap, lapreserve[lap])
                 
-        return result
+        return s
 
     def Status(self):
         s = ''
 
-        s += '現在%d周目 生存ボス %s\n' % (self.bossLap + 1, self.AliveBossString())
-
+        s += self.StatusBoss()
         s += self.StatusAttack()
-        #s += self.StatusOverkill()
+        s += self.StatusOverkill()
+
+        s += '\n'
+        s += self.StatusMemberList()
+
+        reserve = self.StatusReserve()
+        if 0 < len(reserve):
+            s += '\n' + reserve
 
         return s
-
-    def Save(self, clanid : int):
-        dic = {
-            'members': {},
-            'bossLap' : self.bossLap,
-            'channelid' : self.channelid,
-            'beforesortie' : self.beforesortie,
-            'lapAttackCount' : self.lapAttackCount,
-            'bossAttackCount' : self.bossAttackCount,
-            'defeatTime' : self.defeatTime,
- 
-            'namedelimiter' : self.namedelimiter,
-            'admin' : self.admin,
-            'bossdead' : list(self.bossdead),
-        }
-
-        for mid, member in self.members.items():
-            dic['members'][mid] = member.Serialize()
-
-        with open('clandata/%d.json' % (clanid) , 'w') as a:
-            json.dump(dic, a , indent=4)
-
-    @staticmethod
-    def Load(clanid : int):
-        with open('clandata/%d.json' % (clanid)) as a:
-            mdic =  json.load(a)
-
-            clan = Clan(mdic['channelid'])
-            clan.bossLap = mdic['bossLap']
-            clan.namedelimiter = mdic['namedelimiter'] if 'namedelimiter' in mdic else None
-
-            if 'beforesortie' in mdic:
-                clan.beforesortie = mdic['beforesortie']
-
-            if 'bossdead' in mdic:
-                clan.bossdead = set(mdic['bossdead'])
-
-            if 'lapAttackCount' in mdic:
-                clan.lapAttackCount = mdic['lapAttackCount']
-
-            if 'bossAttackCount' in mdic:
-                clan.bossAttackCount = mdic['bossAttackCount']
-
-            if 'defeatTime' in mdic:
-                clan.defeatTime = mdic['defeatTime']
-
-            if 'admin' in mdic:
-                clan.admin = mdic['admin']
-
-            for mid, dicmember in mdic['members'].items():
-                member = ClanMember()
-                member.Deserialize(dicmember)
-                clan.members[int(mid)] = member
-
-            return clan
 
 def GetClan(guild, message) -> Clan:
     global clanhash

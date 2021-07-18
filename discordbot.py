@@ -964,7 +964,7 @@ class Clan():
                 pickuplap = [lap + 1] * BOSSNUMBER
             else:
                 for bidx in range(BOSSNUMBER):
-                    if self.bosscount[bidx] == lap + 1:
+                    if self.bosscount[bidx] == lap + 1 and lap + 2 not in LevelUpLap:
                         pickuplap[bidx] = lap + 1
 
         for bidx in range(BOSSNUMBER):
@@ -1106,14 +1106,13 @@ class Clan():
         boss = self.bosscount[bidx] * BOSSNUMBER + bidx
 
         member.Attack(boss, self.SortieCount())
+        self.messagereaction[message.id] = self.CreateAttackReaction(member, message, boss, member.SortieCount(), 0)
 
         if member.taskkill != 0:
             await message.add_reaction(self.taskkillmark)
 
         member.attackmessage = message
         await self.AddReaction(message, False)
-
-        self.messagereaction[message.id] = self.CreateAttackReaction(member, message, boss, member.SortieCount(), 0)
 
         return True
 
@@ -2087,6 +2086,7 @@ class Clan():
         s = ''
         minlap = self.MinLap()
 
+        s += 'ボス情報 '
         bossmark = self.NumberMark([i + 1 for i in range(BOSSNUMBER) if self.bosscount[i] == minlap])
         s += '%d周目 %s' % (minlap + 1, ' '.join(bossmark))
 
@@ -2128,9 +2128,9 @@ class Clan():
             if not m.DayFinish():
                 fulllist[m.SortieCount()].append(m)
 
-        for i, mem in enumerate(reversed(fulllist)):
+        for i, mem in enumerate(fulllist):
             if 0 < len(mem):
-                s += '残%d凸 %d人\n' % (i , len(mem))
+                s += '残%d凸 %d人\n' % (MAX_SORITE - i, len(mem))
                 s += '  '.join([m.DecoName('n[o]') for m in mem]) + '\n'
         
         unfinish = sum([len(m) for m in fulllist])
@@ -2285,7 +2285,6 @@ async def on_ready():
     Outlog(ERRFILE, "login.")
 
     global clanhash
-    global userhash
 
     for guildid, clan in clanhash.items():
         if clan.guild is None:

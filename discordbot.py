@@ -333,8 +333,8 @@ class ClanMember():
         self.sortie = -1
         self.reportlimit = None
         self.taskkill = 0
-        self.attacktime = [None] * MAX_SORITE
         self.history.clear()
+        self.attacktime = [None] * MAX_SORITE
 
     def History(self):
         str = ''
@@ -686,7 +686,6 @@ class Clan():
         self.channelid = channelid
         self.lastmessage : Optional[discord.Message] = None
         self.stampcheck :Dict[str, Any] = {}
-        self.beforesortie = 0
         self.bosscount = [0] * BOSSNUMBER
         self.lapAttackCount = []
         self.bossAttackCount = []
@@ -716,7 +715,6 @@ class Clan():
             'members': {},
             'bosscount' : self.bosscount,
             'channelid' : self.channelid,
-            'beforesortie' : self.beforesortie,
             'lapAttackCount' : self.lapAttackCount,
             'bossAttackCount' : self.bossAttackCount,
             'defeatTime' : self.defeatTime,
@@ -740,9 +738,6 @@ class Clan():
             clan = Clan(mdic['channelid'])
             clan.bosscount = mdic['bosscount']
             clan.namedelimiter = mdic['namedelimiter'] if 'namedelimiter' in mdic else None
-
-            if 'beforesortie' in mdic:
-                clan.beforesortie = mdic['beforesortie']
 
             if 'lapAttackCount' in mdic:
                 clan.lapAttackCount = mdic['lapAttackCount']
@@ -858,11 +853,9 @@ class Clan():
     def FullReset(self):
         self.Reset()
         self.bosscount = [0] * BOSSNUMBER
-        self.beforesortie = 0
         self.defeatTime.clear()
 
     def Reset(self):
-        self.beforesortie = self.TotalSortie()
         self.lastmessage = None
         self.stampcheck.clear()
         self.messagereaction.clear()
@@ -1307,27 +1300,28 @@ class Clan():
         strarray = opt.split(' ')
 
         if strarray[0] == 'all':
-            route = None
+            routefunc : Callable[[ReserveUnit], bool] = lambda m: True 
         else:
             route = self.RouteAnalyze(strarray[0])
             if len(route) == 0:
-                self.TemporaryMessage(message.channel, 'ルートが有りません'))
-                return False        
+                self.TemporaryMessage(message.channel, 'ルートが有りません')
+                return False
+            routefunc : Callable[[ReserveUnit], bool] = lambda m: m.boss in route
 
-        if 2 <= len(strarray)strarray[1]
+        if 2 <= len(strarray):
+            if strarray[1] == 'all':
+                memfunc : Callable[[ReserveUnit], bool] = lambda m: True
+            else:
+                addmember = [self.FindMember(name) for name in strarray[1:]]
+                addmember = [m for m in addmember if m is not None]
+                if len(addmember) == 0:
+                    self.TemporaryMessage(message.channel, 'メンバーがいません'))
+                    return False        
+                memfunc : Callable[[ReserveUnit], bool] = lambda m: m.member in addmember
 
-        addmember = [self.FindMember(name) for name in strarray[1:]]
-        addmember = [m for m in addmember if m is not None]
+        self.RemoveReserve(lambda m: routefunc(m) and memfunc(m))
 
-        if len(addmember) == 0:
-            self.TemporaryMessage(message.channel, 'メンバーがいません'))
-            return False        
-
-        for m in addmember:
-            self.AddReserve(route, m, None)
-
-        routestr = [('%d-%d' % (m // BOSSNUMBER + 1, m % BOSSNUMBER +1)) for m in route]
-        self.TemporaryMessage(message.channel, '%sに%sを追加しました' % (','.join(routestr), ' '.join([m.name for m in addmember])))
+        self.TemporaryMessage(message.channel, '予約を消しました')
 
         return True
 
@@ -2053,13 +2047,6 @@ class Clan():
             count += member.SortieCount()
         return count
 
-    def TotalSortie(self):
-        count = self.SortieCount() + 0.0
-        for member in self.members.values():
-            if member.IsOverkill():
-                count += 0.5
-        return count + self.beforesortie
-
     def GetLevelUpLap(self, lap) -> int:
         for lv in reversed(LevelUpLap):
             if lv - 1 <= lap:
@@ -2142,7 +2129,10 @@ class Clan():
                 self.reservelist.append(ReserveUnit(r, member, comment))
 
     def RemoveReserve(self, func : Callable[[ReserveUnit], bool]):
-        self.reservelist = [m for m in self.reservelist if not func(m)]
+        n = len([m for m in self.reservelist if func(m)])
+        if 0 < n:
+            self.reservelist = [m for m in self.reservelist if not func(m)]
+        return n
 
     def RemoveReserveExpire(self):
         def Chk(boss):

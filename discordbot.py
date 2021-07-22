@@ -275,11 +275,8 @@ class ClanMember():
     def DecoName(self, opt : str) -> str:
         s = ''
         for c in opt:
-            if c == 'n': s += self.name
-            elif c == 's': 
-                s += '%d凸' % self.SortieCount()
-            elif c == 'S': 
-                s += '[%d凸]' % self.SortieCount()
+            if c == 'n': 
+                s += self.name
             elif c == 't': 
                 if self.taskkill: s += 'tk'
             elif c == 'T': 
@@ -305,6 +302,7 @@ class ClanMember():
         return ''.join([self.AttackCharactor(m) for m in self.attacktime])
     
     def Finish(self, messageid, defeat = False, sortiecount = 1.0):
+        if self.sortie < 0: return
         self.CreateHistory(messageid, self.sortie, self.boss, 0, defeat, sortiecount)
         self.attacktime[self.sortie] = 0
         self.sortie = -1
@@ -315,6 +313,7 @@ class ClanMember():
         self.reportlimit = None
 
     def Overkill(self, messageid, overtime):
+        if self.sortie < 0: return
         self.CreateHistory(messageid, self.sortie, self.boss, overtime, True, 0.5)
         self.attacktime[self.sortie] = overtime
         self.sortie = -1
@@ -1112,12 +1111,15 @@ class Clan():
         boss = self.bosscount[bidx] * BOSSNUMBER + bidx
 
         member.Attack(boss, self.SortieCount())
+        if member.attackmessage is not None:
+            del self.messagereaction[member.attackmessage.id]
+        member.attackmessage = message
+
         self.messagereaction[message.id] = self.CreateAttackReaction(member, message, boss, member.SortieCount(), 0)
 
         if member.taskkill != 0:
             await message.add_reaction(self.taskkillmark)
 
-        member.attackmessage = message
         await self.AddReaction(message, False)
 
         return True
@@ -1154,12 +1156,15 @@ class Clan():
         boss = self.bosscount[bidx] * BOSSNUMBER + bidx
 
         member.Attack(boss, sortie)
+        if member.attackmessage is not None:
+            del self.messagereaction[member.attackmessage.id]
+        member.attackmessage = message
+
         self.messagereaction[message.id] = self.CreateAttackReaction(member, message, boss, sortie, member.attacktime[sortie])
 
         if member.taskkill != 0:
             await message.add_reaction(self.taskkillmark)
 
-        member.attackmessage = message
         await self.AddReaction(message, True)
 
         return True
@@ -1167,6 +1172,7 @@ class Clan():
     async def Cancel(self, message, member : ClanMember, opt):
         if member.IsAttack():
             member.Cancel()
+            self.TemporaryMessage(message.channel, '前のアタックをキャンセルしました')
 
         return True
 
@@ -1297,30 +1303,32 @@ class Clan():
         return True
 
     async def Unplace(self, message, member : ClanMember, opt : str):
+
+        if opt == 'all':
+            self.reservelist.clear()
+            self.TemporaryMessage(message.channel, '全員の予約を削除しました')
+            return True
+
         strarray = opt.split(' ')
-
-        if strarray[0] == 'all':
-            routefunc : Callable[[ReserveUnit], bool] = lambda m: True 
-        else:
-            route = self.RouteAnalyze(strarray[0])
-            if len(route) == 0:
-                self.TemporaryMessage(message.channel, 'ルートが有りません')
-                return False
+        route = self.RouteAnalyze(strarray[0])
+        if 0 < len(route) == 0:
             routefunc : Callable[[ReserveUnit], bool] = lambda m: m.boss in route
+            strarray = strarray[1:]
+        else:
+            routefunc : Callable[[ReserveUnit], bool] = lambda m: True
 
-        if 2 <= len(strarray):
-            if strarray[1] == 'all':
-                memfunc : Callable[[ReserveUnit], bool] = lambda m: True
-            else:
-                addmember = [self.FindMember(name) for name in strarray[1:]]
-                addmember = [m for m in addmember if m is not None]
-                if len(addmember) == 0:
-                    self.TemporaryMessage(message.channel, 'メンバーがいません'))
-                    return False        
-                memfunc : Callable[[ReserveUnit], bool] = lambda m: m.member in addmember
+        addmember = [self.FindMember(name) for name in strarray]
+        addmember = [m for m in addmember if m is not None]
+        if len(addmember) == 0 and len(route) == 0:
+            self.TemporaryMessage(message.channel, 'メンバーがいません'))
+            return False
+
+        if 0 < len(addmember):
+            memfunc : Callable[[ReserveUnit], bool] = lambda m: m.member in addmember
+        else:
+            memfunc : Callable[[ReserveUnit], bool] = lambda m: True
 
         self.RemoveReserve(lambda m: routefunc(m) and memfunc(m))
-
         self.TemporaryMessage(message.channel, '予約を消しました')
 
         return True

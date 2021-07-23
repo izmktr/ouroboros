@@ -680,6 +680,12 @@ class ReserveUnit:
     def SetComment(self, comment):
         self.comment = comment
 
+    def StatusName(self):
+        name = self.member.DecoName('nO')
+        if self.comment is not None and 0 < len(self.comment): 
+            name += '[%s]' % self.comment
+        return name
+
     @staticmethod
     def Deserialize(dic : Dict,  members : Dict[int, ClanMember]):
         if 'boss' not in dic: return None
@@ -1322,6 +1328,10 @@ class Clan():
         strarray = opt.split(' ')
 
         route = self.RouteAnalyze(strarray[0])
+
+        if len(route) == 0:
+            self.TemporaryMessage(message.channel, '予約ルートが有りません')
+            return False
 
         comment = None
         if 1 < len(strarray):
@@ -2318,7 +2328,7 @@ class Clan():
         return s
 
     def StatusReserveBoss(self, boss : int, members : List[ReserveUnit]):
-        result = '%d-%d %s\n' % (boss // BOSSNUMBER + 1, boss % BOSSNUMBER + 1, '  '.join([m.member.DecoName('nO') for m in members]) )
+        result = '%d-%d %s\n' % (boss // BOSSNUMBER + 1, boss % BOSSNUMBER + 1, '  '.join([m.StatusName() for m in members]) )
 
         return result
 

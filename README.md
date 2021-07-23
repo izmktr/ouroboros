@@ -3,6 +3,8 @@ project code:ouroboros
 
 プリンセスコネクト:Re Diveのクランバトル用discord botです  
 
+最低限これだけ覚えておくべき、というビギナー向けの解説を[こちら](document/biggner.md)においています
+
 # コマンド
 凸報告のチャンネルで入力します  
 凸系コマンド以外はbotにメンションすることでどこのチャンネルでも使うことが出来ます
@@ -134,7 +136,7 @@ memberinitialize
 朝5時に自動的に実行される処理と同様です
 
 ### monthlyreset
-全ボスの周回数を1に戻し、メンバー全員の凸数を0に戻します
+全ボスの周回数を1に戻し、メンバー全員の凸数を0に戻します  
 クランバトル開始時に自動的に実行される処理と同様です  
 
 ## 管理者コマンド
@@ -144,4 +146,14 @@ setting.jsonを読み込み直します
 
 
 # サーバ導入
+
+discord.pyを導入します  
+tokenkeycode.py というファイルを作り、以下の行を記述します
+
+```
+# tokenkeycode.py というファイル名で以下の行を保存する 
+# TOKEN = 'xxxxxxxxxxxxxxxxxxxxxxxx.yyyyyy.zzzzzzzzzzzzzzzzzzzzzzzzzzz'
+```
+
+discordbot.py を実行します
 

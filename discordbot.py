@@ -677,6 +677,9 @@ class ReserveUnit:
        self.member = member
        self.comment = comment
 
+    def SetComment(self, comment):
+        self.comment = comment
+
     @staticmethod
     def Deserialize(dic : Dict,  members : Dict[int, ClanMember]):
         if 'boss' not in dic: return None
@@ -1185,7 +1188,7 @@ class Clan():
 
         boss = self.bosscount[bidx] * BOSSNUMBER + bidx
 
-        member.Attack(boss, self.SortieCount())
+        member.Attack(boss, member.SortieCount())
         if member.attackmessage is not None:
             self.messagereaction.pop(member.attackmessage.id, None)
         member.attackmessage = message
@@ -2015,7 +2018,7 @@ class Clan():
         except ValueError:
             pass
 
-        return None
+        return result
 
     def SetOutputChannel(self):
         if self.outputchannel is None:
@@ -2131,7 +2134,7 @@ class Clan():
 
         return False
                         
-    def SortieCount(self):
+    def TotalSortieCount(self):
         count = 0
         for member in self.members.values():
             count += member.SortieCount()
@@ -2305,12 +2308,12 @@ class Clan():
 
         for i, mem in enumerate(fulllist):
             if 0 < len(mem):
-                s += '残%d凸 %d人\n' % (MAX_SORITE - i, len(mem))
+                s += '**残%d凸 %d人**\n' % (MAX_SORITE - i, len(mem))
                 s += '  '.join([m.DecoName('nOT') for m in mem]) + '\n'
         
         unfinish = sum([len(m) for m in fulllist])
         if len(self.members) != unfinish:
-            s += '完凸 %d人\n' % (len(self.members) - unfinish)
+            s += '**完凸 %d人**\n' % (len(self.members) - unfinish)
         
         return s
 
@@ -2409,7 +2412,7 @@ async def loop():
                 if dailyfunc is not None:
                     dailyfunc(clan)
 
-                if resetflag or 0 < clan.SortieCount():
+                if resetflag or 0 < clan.TotalSortieCount():
                     clan.SetInputChannel()
                     if clan.inputchannel is not None:
                         await clan.inputchannel.send(message)

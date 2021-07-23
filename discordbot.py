@@ -46,6 +46,7 @@ for l in BossHpData:
     BossLapScore.append(lapscore)
 
 from re import match, split
+from sre_constants import MARK
 from types import MemberDescriptorType
 import tokenkeycode
 
@@ -450,18 +451,11 @@ class DamageControl():
             self.members.clear()
 
     async def Remove(self, member : ClanMember):
-        resultflag = 0 < len(self.members)
         if member in self.members:
             del self.members[member]
             self.MemberSweep()
 
-        if resultflag:
-            await self.SendResult()
-
     async def Injure(self, member : ClanMember):
-       
-        resultflag = 0 < len(self.members)
-
         if member in self.members:
             m = self.members[member]
             self.remainhp -= m.damage
@@ -472,23 +466,35 @@ class DamageControl():
 
             self.MemberSweep()
 
-        if resultflag:
-             await self.SendResult()
-
     def IsAutoExecutive(self):
         if self.channel is None: return False
         if self.active: return False
         if 0 < self.remainhp: return False
         return True
 
+    def IsAttackMember(self, member : ClanMember):
+        return member.IsAttack() and member.boss % BOSSNUMBER == self.bossindex
+
+    def IsSetRemainHp(self, clan : 'Clan', member : ClanMember):
+        if self.IsAttackMember(member): return True
+        
+        for dc in clan.damagecontrol:
+            if dc != self and dc.channel == self.channel: return False
+        return True
+
     def messageanlyze(self, clan : 'Clan', member : ClanMember, message):
+        # 残りHP計算
         m = re.match('([@＠])([\s　]*)(\d+)', message.content)
         if m:
-            remainhp = int(m.group(3))
-            self.RemainHp(remainhp)
-            return True
+            if self.IsSetRemainHp(clan, member):
+                remainhp = int(m.group(3))
+                self.RemainHp(remainhp)
+                return True
+            else:
+                clan.TemporaryMessage(self.channel, 'ボスが確定しません')
+                return False
         
-        if member.IsAttack():
+        if member.IsAttack() and member.boss % BOSSNUMBER == self.bossindex:
             m = re.match('(\d+[s秒])([\s　]*)(\d+)([^\d]*.*)', message.content)
             if m:
                 damage = int(m.group(3))
@@ -507,7 +513,7 @@ class DamageControl():
             if m:
                 damage = int(m.group(3)) if 0 < len(m.group(3)) else 0
                 comment = m.group(4)
-                self.Damage(member, damage, comment)
+                self.Damage(member, damage, comment, 1)
                 return True
         return False
 
@@ -574,7 +580,7 @@ class DamageControl():
             if ao == bo: return sign(b.damage - a.damage)
             return sign(bo - ao)
 
-        damagelist = sorted([value for value in self.members.values()], key=cmp_to_key(Compare)) 
+        damagelist : List[DamageControlMember] = sorted([value for value in self.members.values()], key=cmp_to_key(Compare)) 
         totaldamage = sum([n.damage for n in damagelist])
 
         attackmember = set([m for m in self.clanmembers.values() if m.IsAttack()])
@@ -604,7 +610,7 @@ class DamageControl():
             if m.status == 0:
                 attackmember.discard(m.member)
 
-                mes += '\n%s %d' % (m.member.DecoName('nOT'), m.damage)
+                mes += '\n%s %s%d' % (m.member.DecoName('nOT'), '' if m.mark == 0 else '×', m.damage)
                 if self.remainhp <= m.damage:
                     if m.member.IsOverkill():
                         mes += ' 持越'
@@ -631,8 +637,8 @@ class DamageControl():
         return mes
 
     async def SendResult(self):
-        self.active = True
-        await self.SendMessage(self.Status())
+        if self.active:
+            await self.SendMessage(self.Status())
 
     async def SendFinish(self, message):
         if self.active and self.lastmessage is not None:
@@ -853,7 +859,7 @@ class Clan():
             (['monthlyreset'], self.MonthlyReset),
             (['bossname'], self.BossName),
             (['term'], self.Term),
-#            (['remain','残り'], self.Remain),
+            (['remain','残り'], self.Remain),
 #            (['damage','ダメ','ダメージ'], self.Damage),
 #            (['pd'], self.PhantomDamage),
 #            (['dtest'], self.DamageTest),
@@ -1092,6 +1098,7 @@ class Clan():
                 self.RemoveReserve(lambda m: m.member == member and m.boss == boss)
 
                 await self.damagecontrol[boss % BOSSNUMBER].Injure(member)
+                await self.damagecontrol[boss % BOSSNUMBER].SendResult()
             
             if 1 <= idx and idx <= 8:
                 if 0 < overtime:
@@ -1116,6 +1123,7 @@ class Clan():
             if idx == 9:
                 member.Cancel()
                 await self.damagecontrol[boss % BOSSNUMBER].Remove(member)
+                await self.damagecontrol[boss % BOSSNUMBER].SendResult()
 
             await self.RemoveReaction(message, 0 < overtime, message.guild.me)
             return True
@@ -1847,10 +1855,6 @@ class Clan():
         return True
 
     async def Remain(self, message, member : ClanMember, opt):
-        if message.channel.type == discord.ChannelType.private:
-            self.TemporaryMessage(message.channel, 'このチャンネルでは使えません')
-            return
-
         try:
             sp = opt.split(' ')
             if len(sp) < 2:
@@ -1860,6 +1864,10 @@ class Clan():
             if bidx < 0 or BOSSNUMBER <= bidx:
                 raise ValueError
             remainhp = int(sp[1])
+
+            dc = self.damagecontrol[bidx]
+            dc.RemainHp(remainhp)
+            await dc.SendResult()
         except ValueError:
             self.TemporaryMessage(message.channel, '数字が読み取れません')
             return False

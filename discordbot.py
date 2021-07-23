@@ -2426,6 +2426,7 @@ async def loop():
 
         message = 'おはようございます\nメンバーの情報をリセットしました'
         dailyfunc = None
+        resetflag = False
 
         if nowdate == DateCalc(BATTLESTART, -1):
             message = 'おはようございます\n明日よりクランバトルです。状況報告に名前が出ていない人は、今日中に「凸」と発言してください。'

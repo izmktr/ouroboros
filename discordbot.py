@@ -909,7 +909,7 @@ class Clan():
         await asyncio.sleep(60)
         try:
             await post.delete()
-        except discord.errors.NotFound:
+        except (discord.errors.NotFound, discord.errors.Forbidden):
             pass
 
     def TemporaryMessage(self, channel, message : str):
@@ -1182,8 +1182,8 @@ class Clan():
     async def Attack(self, message, member : ClanMember, opt):
         try:
             num = int(opt)
-            bidx = num - 1 if num < 10 else num % 10
-            sortie = num % 10 - 1 
+            bidx = num - 1 if num < 10 else num // 10 - 1
+            sortie = -1 if num < 10 else num % 10 - 1
             if bidx < 0 or BOSSNUMBER <= bidx or MAX_SORITE <= sortie:
                 raise ValueError
         except ValueError:

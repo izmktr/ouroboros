@@ -665,7 +665,8 @@ class DamageControl():
 
             try:
                 self.outputlock = 2
-                self.lastmessage = await self.channel.send(mes)
+                if self.channel is not None:
+                    self.lastmessage = await self.channel.send(mes)
             except discord.errors.Forbidden:
                 self.channel = None
         finally:
@@ -906,7 +907,10 @@ class Clan():
     async def SendMessage(channel, message : str):
         post = await channel.send(message)
         await asyncio.sleep(60)
-        await post.delete()
+        try:
+            await post.delete()
+        except discord.errors.NotFound:
+            pass
 
     def TemporaryMessage(self, channel, message : str):
         asyncio.ensure_future(self.SendMessage(channel, message))
@@ -1177,34 +1181,44 @@ class Clan():
 
     async def Attack(self, message, member : ClanMember, opt):
         try:
-            bidx = int(opt) - 1
-            if bidx < 0 or BOSSNUMBER <= bidx:
+            num = int(opt)
+            bidx = num - 1 if num < 10 else num % 10
+            sortie = num % 10 - 1 
+            if bidx < 0 or BOSSNUMBER <= bidx or MAX_SORITE <= sortie:
                 raise ValueError
         except ValueError:
-            self.TemporaryMessage(message.channel, '凸5 のように発言してください')
+            self.TemporaryMessage(message.channel, '「凸5」のように発言してください')
             return False
 
         error = await self.AttackCheck(message, member, bidx)
         if error:
             return False
 
-        if member.FirstSoriteNum() == 0:
-            self.TemporaryMessage(message.channel, '新規凸がありません')
-            return False
+        if sortie == -1:
+            if member.FirstSoriteNum() == 0:
+                self.TemporaryMessage(message.channel, '新規凸がありません')
+                return False
+            sortie = member.SortieCount()
+            overtime = 0
+        else:
+            overtime = member.attacktime[sortie]
+            if overtime is None or overtime == 0:
+                self.TemporaryMessage(message.channel, '持ち越しではありません')
+                return False
 
         boss = self.bosscount[bidx] * BOSSNUMBER + bidx
 
-        member.Attack(boss, member.SortieCount())
+        member.Attack(boss, sortie)
         if member.attackmessage is not None:
             self.messagereaction.pop(member.attackmessage.id, None)
         member.attackmessage = message
 
-        self.messagereaction[message.id] = self.CreateAttackReaction(member, message, boss, member.SortieCount(), 0)
+        self.messagereaction[message.id] = self.CreateAttackReaction(member, message, boss, sortie, overtime)
 
         if member.taskkill != 0:
             await message.add_reaction(self.taskkillmark)
 
-        await self.AddReaction(message, False)
+        await self.AddReaction(message, 0 < overtime)
 
         return True
 
@@ -1274,7 +1288,7 @@ class Clan():
             if bidx < 0 or BOSSNUMBER <= bidx:
                 raise ValueError
         except ValueError:
-            self.TemporaryMessage(message.channel, '数値エラー')
+            self.TemporaryMessage(message.channel, 'defeat [ボス番号] でボスを討伐扱いにします')
             return False
 
         newlap = self.DefeatBoss(bidx)
@@ -1293,7 +1307,7 @@ class Clan():
             if bidx < 0 or BOSSNUMBER <= bidx:
                 raise ValueError
         except ValueError:
-            self.TemporaryMessage(message.channel, '数値エラー')
+            self.TemporaryMessage(message.channel, 'undefeat [ボス番号] でボスを未討伐に戻します')
             return False
 
         newlap = self.UndefeatBoss(bidx)
@@ -1315,9 +1329,9 @@ class Clan():
                 raise ValueError
 
             self.bosscount = [int(s) - 1 for s in sp]
-            await message.channel.send('ボスを設定しました')
+            self.TemporaryMessage(message.channel, 'ボスを設定しました')
         except ValueError:
-            await message.channel.send('数値エラー')
+            self.TemporaryMessage(message.channel, 'setboss [ボス周回数] × 5 でボスの周回数を設定します')
 
         return True
 
@@ -1855,6 +1869,16 @@ class Clan():
 
     async def DamageChannel(self, message, member : ClanMember, opt):
         try:
+            if opt == 'all':
+                for dc in self.damagecontrol:
+                    dc.SetChannel(message.channel)
+                return False
+
+            if opt == 'reset':
+                for dc in self.damagecontrol:
+                    dc.SetChannel(None)
+                return False
+
             bidx = int(opt) - 1
             if 0 <= bidx and bidx < BOSSNUMBER:
                 self.damagecontrol[bidx].SetChannel(message.channel)

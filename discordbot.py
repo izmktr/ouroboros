@@ -1748,21 +1748,17 @@ class Clan():
     async def ActiveMember(self, message, member : ClanMember, opt):
         channel = message.channel
 
-        mes = ''
-
         ttime = datetime.datetime.now() + datetime.timedelta(hours = -1)
         active = [m for m in self.members.values() if ttime < m.lastactive and m.SortieCount() < MAX_SORITE]
 
-        def Compare(a : ClanMember, b : ClanMember):
-            return sign(a.SortieCount() - b.SortieCount())
+        if 0 < len(active):
+            def Compare(a : ClanMember, b : ClanMember):
+                return sign(a.SortieCount() - b.SortieCount())
 
-        active = sorted(active, key=cmp_to_key(Compare))
+            active = sorted(active, key=cmp_to_key(Compare))
+            mes = '\n'.join([m.DecoName('nOT') for m in active])
+            await channel.send(mes)
 
-        for m in active:
-            mes += '%s: %d凸' % (m.name, m.SortieCount())
-            mes += '\n'
-
-        await channel.send(mes)
         return False
 
     async def InputError(self, message, member : ClanMember, opt):
@@ -2154,7 +2150,7 @@ class Clan():
             if react.addreaction is not None:
                 return await react.addreaction(member, payload)
 
-        return True
+        return False
 
     async def on_raw_reaction_remove(self, payload):
         member : ClanMember = self.members.get(payload.user_id)

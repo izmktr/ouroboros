@@ -674,12 +674,23 @@ class DamageControl():
 
 class ReserveUnit:
     def __init__(self, boss: int, member: ClanMember, comment : Optional[str]):
-       self.boss = boss
-       self.member = member
-       self.comment = comment
+        self.boss = boss
+        self.member = member
+        self.SetComment(comment)
 
+    num3 = re.compile('[\d]{3,}')
     def SetComment(self, comment):
         self.comment = comment
+
+        if self.comment is None:
+            self.damage = 0
+            return
+
+        m = self.num3.search(comment)
+        if m:
+            self.damage = int(m.group())
+        else:
+            self.damage = 0
 
     def StatusName(self):
         name = self.member.DecoName('nO')
@@ -891,7 +902,7 @@ class Clan():
                 for ch in guild.channels:
                     if dc == ch.id:
                         clan.damagecontrol[i].SetChannel(ch)
-                        clan.damagecontrol[i].SetBossHp(BossHpData[clan.BossLevel(i) - 1][i][0])
+                        clan.damagecontrol[i].SetBossHp(self.BossMaxHp(self.bosscount[i], i))
                         break
 
     def GetMember(self, author) -> ClanMember:
@@ -2140,6 +2151,10 @@ class Clan():
     def BossCount(self, bossindex :int):
         return self.bossLap * BOSSNUMBER + bossindex
 
+    def BossMaxHp(self, lap : int, bossindex : int):
+        if bossindex < 0 or BOSSNUMBER <= bossindex: return 0
+        return BossHpData[self.BossLevel(lap) - 1][bossindex][0]
+
     async def on_raw_reaction_add(self, payload):
         member : ClanMember = self.members.get(payload.user_id)
         if member is None:
@@ -2199,9 +2214,8 @@ class Clan():
         baselap = self.lapAttackCount[self.bossLap - length - 1] if 0 <= self.bossLap - length - 1 else 0
         return (self.lapAttackCount[self.bossLap - 1] - baselap) / length
 
-    def BossLevel(self, bossindex):
+    def BossLevel(self, lap):
         level = 1
-        lap = self.bosscount[bossindex]
         for lvlap in LevelUpLap:
             if lap < lvlap :
                 return level
@@ -2209,7 +2223,7 @@ class Clan():
         return level
 
     def NextLvUpLap(self, bossindex):
-        levelindex = self.BossLevel(bossindex) - 1
+        levelindex = self.BossLevel(self.bosscount[bossindex]) - 1
 
         if len(LevelUpLap) <= levelindex: return 0
         return (LevelUpLap[levelindex] - self.bossLap - 1)
@@ -2223,7 +2237,7 @@ class Clan():
 
         self.RemoveReserveExpire()
 
-        self.damagecontrol[bossindex].SetBossHp(BossHpData[self.BossLevel(bossindex) - 1][bossindex][0])
+        self.damagecontrol[bossindex].SetBossHp(self.BossMaxHp(self.bosscount[bossindex], bossindex))
 
         newlap = self.MinLap()
         if minlap != newlap:
@@ -2234,7 +2248,7 @@ class Clan():
         if 0 < self.bosscount[bossindex]:
             self.bosscount[bossindex] -= 1
 
-        self.damagecontrol[bossindex].SetBossHp(BossHpData[self.BossLevel(bossindex) - 1][bossindex][0])
+        self.damagecontrol[bossindex].SetBossHp(self.BossMaxHp(self.bosscount[bossindex], bossindex))
 
     def AliveBossString(self):
         return ' '.join([self.numbermarks[m + 1] for m in self.AliveBoss()])
@@ -2348,7 +2362,14 @@ class Clan():
         return s
 
     def StatusReserveBoss(self, boss : int, members : List[ReserveUnit]):
-        result = '%d-%d %s\n' % (boss // BOSSNUMBER + 1, boss % BOSSNUMBER + 1, '  '.join([m.StatusName() for m in members]) )
+        lap = boss // BOSSNUMBER
+        bidx = boss % BOSSNUMBER
+        routestr = '%d-%d' % (lap + 1, bidx + 1)
+        damage = sum([m.damage for m in members])
+        chk = (chr(int(0x1F197))) if self.BossMaxHp(lap, bidx) <= damage else ''
+        damagestr = ('[%d%s] ' % (damage, chk)) if 0 < damage else ''
+
+        result = '%s%s %s\n' % (routestr, damagestr, '  '.join([m.StatusName() for m in members]) )
 
         return result
 

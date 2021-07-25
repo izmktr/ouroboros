@@ -45,6 +45,7 @@ for l in BossHpData:
         _i.append(_i[0] * _i[1])
     BossLapScore.append(lapscore)
 
+import enum
 from re import match, split
 from sre_constants import MARK
 from types import MemberDescriptorType
@@ -209,7 +210,7 @@ class AttackHistory():
 
     @staticmethod
     def Desrialize(dic):
-        history = AttackHistory(0, 0, 0, 0, False, 0)
+        history = AttackHistory(0, 0, -1, 0, False, 0)
         for key in AttackHistory.keyarray:
             if key in dic:
                 history.__dict__[key] = dic[key]
@@ -272,7 +273,7 @@ class ClanMember():
         count = 0.0
 
         for h in self.history:
-            if h.boss < (lap + 1) * BOSSNUMBER:
+            if 0 <= h.boss and h.boss < (lap + 1) * BOSSNUMBER:
                 count += h.sortiecount
         if MAX_SORITE <= count:
             return MAX_SORITE
@@ -344,12 +345,15 @@ class ClanMember():
     def History(self):
         str = ''
         for h in self.history:
-            str += '%d凸目 %d周目:%s' % (h.sortie + 1,
-            h.boss // BOSSNUMBER + 1, 
-            BossName[h.boss % BOSSNUMBER])
+            if 0 <= h.boss:
+                str += '%d凸目 %d周目:%s' % (h.sortie + 1,
+                h.boss // BOSSNUMBER + 1, 
+                BossName[h.boss % BOSSNUMBER])
+            else:
+                str += '%d凸目 ボス不明 :' % (h.sortie + 1)
 
             if h.defeat:
-                str += ' %d秒' % (h.overtime)
+                str += ' %d秒 討伐' % (h.overtime)
 
             str += '\n'
 
@@ -865,6 +869,7 @@ class Clan():
             (['namedelimiter'], self.NameDelimiter),
             (['memberinitialize'], self.MemberInitialize),
             (['setmemberrole'], self.SetMemberRole),
+            (['setattack'], self.SetAttack),
             (['dice', 'サイコロ', 'ダイス'], self.Dice),
             (['damagechannel'], self.DamageChannel),
 #            (['role'], self.Role),
@@ -1547,6 +1552,55 @@ class Clan():
                 self.GetMember(m)
 
         self.TemporaryMessage(message.channel, '%s のRoleのメンバーを登録しました' % role.name)
+
+        return True
+
+
+    async def SetAttack(self, message, member : ClanMember, opt : str):
+
+        atmark = opt
+
+        if len(atmark) != MAX_SORITE:
+            self.TemporaryMessage(message.channel, '文字数が違います')
+            return False
+
+        for i, chr in enumerate(atmark):
+            if 'o23456789x'.find(chr) == -1:
+                self.TemporaryMessage(message.channel, '認識できない記号があります')
+                return False
+            if chr == 'o':
+                if 1 < MAX_SORITE - i:
+                    for j in range(MAX_SORITE - i - 1):
+                        if atmark[i + j + 1] != 'o':
+                            self.TemporaryMessage(message.channel, 'o の後に別の文字があります')
+                            return False
+        
+        newhistory = []
+        for i, chr in enumerate(atmark):
+            shistory = [m for m in member.history if m.sortie == i]
+            l = len(shistory)
+            if chr == 'x':
+                if l < 2:
+                    boss = -1 if l == 0 else shistory[0].boss
+                    newhistory.append(AttackHistory(0, i, boss, 0, False, 1))
+                else:
+                    newhistory.append(shistory)
+            elif chr == 'o':
+                pass
+            else:
+                otime = int(chr)
+                if l == 0:
+                    newhistory.append(AttackHistory(0, i, -1, otime * 10, True, 0.5))
+                else:
+                    s = shistory[0]
+                    for m in shistory:
+                        if 0 < m.overtime:
+                            s = m
+                            break
+                    newhistory.append(AttackHistory(0, i, s.boss, otime * 10, True, 0.5))
+
+        member.history = newhistory
+        member.CreateAttackTime()
 
         return True
 

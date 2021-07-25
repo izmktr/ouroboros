@@ -885,7 +885,7 @@ class Clan():
 #            (['pd'], self.PhantomDamage),
 #            (['dtest'], self.DamageTest),
 #            (['clanattack'], self.AllClanAttack),
-#            (['clanreport'], self.AllClanReport),
+            (['clanreport'], self.AllClanReport),
             (['active', 'アクティブ'], self.ActiveMember),
             (['servermessage'], self.ServerMessage),
             (['serverleave'], self.ServerLeave),

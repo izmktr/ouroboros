@@ -1575,7 +1575,7 @@ class Clan():
                             self.TemporaryMessage(message.channel, 'o の後に別の文字があります')
                             return False
         
-        newhistory = []
+        newhistory : List[AttackHistory] = []
         for i, chr in enumerate(atmark):
             shistory = [m for m in member.history if m.sortie == i]
             l = len(shistory)
@@ -1584,7 +1584,7 @@ class Clan():
                     boss = -1 if l == 0 else shistory[0].boss
                     newhistory.append(AttackHistory(0, i, boss, 0, False, 1))
                 else:
-                    newhistory.append(shistory)
+                    newhistory.extend(shistory)
             elif chr == 'o':
                 pass
             else:

@@ -71,6 +71,7 @@ T = TypeVar('T')
 
 BOSSNUMBER = len(BossName)
 MA_LAP = 3
+RESERVELAP = 1000
 
 # 接続に必要なオブジェクトを生成
 intents = discord.Intents.default()  # デフォルトのIntentsオブジェクトを生成
@@ -292,7 +293,7 @@ class ClanMember():
             elif c == 'o':
                 s += self.AttackTag(False)
             elif c == 'O':
-                s += '[' + self.AttackTag() + ']'
+                s += '[' + self.AttackTag(False) + ']'
             elif c == 'x':
                 s += self.AttackTag(True)
             elif c == 'X':
@@ -1131,7 +1132,8 @@ class Clan():
 
             if idx == 0:
                 member.Finish(payload.message_id)
-                self.RemoveReserve(lambda m: m.member == member and m.boss == boss)
+                reboss = RESERVELAP * BOSSNUMBER + boss % BOSSNUMBER
+                self.RemoveReserve(lambda m: m.member == member and m.boss in [boss, reboss])
 
                 await self.damagecontrol[boss % BOSSNUMBER].Injure(member)
                 await self.damagecontrol[boss % BOSSNUMBER].SendResult()
@@ -1144,6 +1146,9 @@ class Clan():
 
                 bidx = boss % BOSSNUMBER
                 await self.damagecontrol[bidx].SendFinish('%s の討伐お疲れさまです' % (BossName[bidx]))
+
+                reboss = RESERVELAP * BOSSNUMBER + bidx
+                self.RemoveReserve(lambda m: m.member == member and m.boss == reboss)
 
                 newlap = self.DefeatBoss(bidx)
 
@@ -1370,6 +1375,12 @@ class Clan():
     async def Memo(self, message, member : ClanMember, opt):
         return True
 
+    def RouteString(self, boss):
+        if boss // BOSSNUMBER == RESERVELAP:
+            return '未定-%d' % (boss % BOSSNUMBER + 1)
+        else:
+            return '%d-%d' % (boss // BOSSNUMBER + 1, boss % BOSSNUMBER + 1)
+
     async def Reserve(self, message, member : ClanMember, opt : str):
         strarray = opt.split(' ')
 
@@ -1385,7 +1396,7 @@ class Clan():
 
         self.AddReserve(route, member, comment)
 
-        routestr = [('%d-%d' % (m // BOSSNUMBER + 1, m % BOSSNUMBER +1)) for m in route]
+        routestr = [self.RouteString(m) for m in route]
         self.TemporaryMessage(message.channel, '%sの予約を入れました' % (','.join(routestr)))
 
         return True
@@ -1404,7 +1415,7 @@ class Clan():
 
         self.RemoveReserve(lambda m: m.member == member and m.boss in route)
 
-        routestr = [('%d-%d' % (m // BOSSNUMBER + 1, m % BOSSNUMBER +1)) for m in route]
+        routestr = [self.RouteString(m) for m in route]
         self.TemporaryMessage(message.channel, '%sの予約を消しました' % (','.join(routestr)))
         
         return True
@@ -1431,7 +1442,7 @@ class Clan():
         for m in addmember:
             self.AddReserve(route, m, None)
 
-        routestr = [('%d-%d' % (m // BOSSNUMBER + 1, m % BOSSNUMBER +1)) for m in route]
+        routestr = [self.RouteString(m) for m in route]
         self.TemporaryMessage(message.channel, '%sに%sを追加しました' % (','.join(routestr), ' '.join([m.name for m in addmember])))
 
         return True
@@ -2111,7 +2122,11 @@ class Clan():
             if 0 <= routestr.find('-'):
                 a = routestr.split('-')
                 if 2 <= len(a):
-                    lap = int(a[0]) - 1
+                    if 0 <= 'xX'.find(a[0]):
+                        lap = RESERVELAP
+                    else:
+                        lap = int(a[0]) - 1
+
                     bidx = int(a[1]) - 1
                     
                     if 0 <= bidx and bidx < BOSSNUMBER:
@@ -2446,10 +2461,14 @@ class Clan():
     def StatusReserveBoss(self, boss : int, members : List[ReserveUnit]):
         lap = boss // BOSSNUMBER
         bidx = boss % BOSSNUMBER
-        routestr = '%d-%d' % (lap + 1, bidx + 1)
+
+        routestr = self.RouteString(boss)
         damage = sum([m.damage for m in members])
-        chk = (chr(int(0x1F197))) if self.BossMaxHp(lap, bidx) <= damage else ''
-        damagestr = ('[%d%s] ' % (damage, chk)) if 0 < damage else ''
+        if lap == RESERVELAP:
+            damagestr = ('[%d] ' % damage) if 0 < damage else ''
+        else:
+            chk = (chr(int(0x1F197))) if self.BossMaxHp(lap, bidx) <= damage else ''
+            damagestr = ('[%d%s] ' % (damage, chk)) if 0 < damage else ''
 
         result = '%s%s %s\n' % (routestr, damagestr, '  '.join([m.StatusName() for m in members]) )
 

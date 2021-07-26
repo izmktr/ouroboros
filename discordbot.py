@@ -47,7 +47,7 @@ for l in BossHpData:
 
 import enum
 from re import match, split
-from sre_constants import MARK
+from sre_constants import ATCODES, MARK
 from types import MemberDescriptorType
 import tokenkeycode
 
@@ -55,6 +55,7 @@ import asyncio
 import discord
 from discord.ext import tasks
 import datetime 
+import calendar
 import json
 import glob
 import os
@@ -289,9 +290,15 @@ class ClanMember():
             elif c == 'T': 
                 if self.taskkill: s += '[tk]'
             elif c == 'o':
-                s += self.AttackTag()
+                s += self.AttackTag(False)
             elif c == 'O':
                 s += '[' + self.AttackTag() + ']'
+            elif c == 'x':
+                s += self.AttackTag(True)
+            elif c == 'X':
+                atag = self.AttackTag(True)
+                if 0 < len(atag):
+                    s += '[%s]' % atag
             else: s += c
 
         return s
@@ -300,13 +307,13 @@ class ClanMember():
     def SortieCount(self):
         return MAX_SORITE - self.FirstSoriteNum()
     
-    def AttackCharactor(self, at : Optional[int]):
-        if at is None : return 'o'
+    def AttackCharactor(self, at : Optional[int], short : bool):
+        if at is None : return '' if short else 'o'
         if at == 0 : return 'x'
         return '%d' % (at // 10)
 
-    def AttackTag(self):
-        return ''.join([self.AttackCharactor(m) for m in self.attacktime])
+    def AttackTag(self, short : bool):
+        return ''.join([self.AttackCharactor(m, short) for m in self.attacktime])
     
     def Finish(self, messageid, defeat = False, sortiecount = 1.0):
         if self.sortie < 0: return
@@ -1340,14 +1347,23 @@ class Clan():
 
     async def SetBoss(self, message, member : ClanMember, opt):
         try:
+            global LevelUpLap
             sp = opt.split(' ')
             if len(sp) != BOSSNUMBER:
                 raise ValueError
 
-            self.bosscount = [int(s) - 1 for s in sp]
+            data = [int(s) - 1 for s in sp]
+            minlap = min([m for m in data if 0 < m])
+            overlap = minlap + 1 if minlap + 2 in LevelUpLap else minlap + 2
+
+            if len([m for m in data if overlap < m]):
+                self.TemporaryMessage(message.channel, '周回数がおかしいデータがあります')
+                return False
+
+            self.bosscount = [m if 0 < m else overlap for m in data]
             self.TemporaryMessage(message.channel, 'ボスを設定しました')
         except ValueError:
-            self.TemporaryMessage(message.channel, 'setboss [ボス周回数] × 5 でボスの周回数を設定します')
+            self.TemporaryMessage(message.channel, 'setboss [ボス周回数] × 5 でボスの周回数を設定します(0は未出現)\n例)setboss 5 4 0 0 4')
 
         return True
 
@@ -1560,8 +1576,12 @@ class Clan():
 
         atmark = opt
 
-        if len(atmark) != MAX_SORITE:
-            self.TemporaryMessage(message.channel, '文字数が違います')
+        if MAX_SORITE < len(atmark) :
+            self.TemporaryMessage(message.channel, '文字が多いです')
+            return False
+
+        if len(atmark) == 0:
+            self.TemporaryMessage(message.channel, '凸数をリセットしたい場合、「setattack o」と入れてください')
             return False
 
         for i, chr in enumerate(atmark):
@@ -1586,7 +1606,7 @@ class Clan():
                 else:
                     newhistory.extend(shistory)
             elif chr == 'o':
-                pass
+                break
             else:
                 otime = int(chr)
                 if l == 0:
@@ -1601,6 +1621,7 @@ class Clan():
 
         member.history = newhistory
         member.CreateAttackTime()
+        self.TemporaryMessage(message.channel, '設定しました')
 
         return True
 
@@ -2077,6 +2098,12 @@ class Clan():
 
         return False
 
+    def IsAttackable(self, lap):
+        minlap = self.MinLap()
+        if lap < minlap or minlap + 2 <= lap: return False
+        if lap != minlap and lap + 1 in LevelUpLap: return False
+        return True
+
     def RouteAnalyze(self, routestr : str):
         result = []
         addroute = 1
@@ -2103,7 +2130,8 @@ class Clan():
             while 0 < route:
                 bidx = route % 10 - 1
                 if 0 <= bidx and bidx < BOSSNUMBER:
-                    result.append(bidx + (self.bosscount[bidx] + addroute) * BOSSNUMBER)
+                    subboss = -1 if self.IsAttackable(self.bosscount[bidx]) else 0
+                    result.append(bidx + (self.bosscount[bidx] + addroute + subboss) * BOSSNUMBER)
                     route = route // 10
                 else:
                     raise ValueError
@@ -2377,20 +2405,20 @@ class Clan():
 
     def StatusOverkill(self):
         s = ''
-        time = [0] * 4
         tstr = ['フル', '長', '中', '短']
+        time = [0] * len(tstr)
 
         for m in self.members.values():
             for t in m.attacktime:
                 if t is not None and 0 < t:
                     if t == 90: time[0] += 1
-                    elif 70 < t: time[1] += 1
-                    elif 40 < t: time[2] += 1
+                    elif 70 <= t: time[1] += 1
+                    elif 40 <= t: time[2] += 1
                     else: time[3] += 1
 
         if 0 < sum(time):
             s += '持越 '
-            s += '  '.join(['%s:%d' % (tstr[i], time[i]) for i in range(4) if 0 < time[i] ])
+            s += '  '.join(['%s:%d' % (tstr[i], time[i]) for i in range(len(tstr)) if 0 < time[i] ])
             s += '\n'
 
         return s
@@ -2407,7 +2435,7 @@ class Clan():
         for i, mem in enumerate(fulllist):
             if 0 < len(mem):
                 s += '**残%d凸 %d人**\n' % (MAX_SORITE - i, len(mem))
-                s += '  '.join([m.DecoName('nOT') for m in mem]) + '\n'
+                s += '  '.join([m.DecoName('nXT') for m in mem]) + '\n'
         
         unfinish = sum([len(m) for m in fulllist])
         if len(self.members) != unfinish:
@@ -2491,6 +2519,9 @@ async def loop():
     nowdate = now.strftime('%m/%d')
     nowtime = now.strftime('%H:%M')
 
+    global BATTLESTART
+    global BATTLEEND
+
     #毎日5時更新
     if nowtime == '05:00':
         Outlog(ERRFILE, '05:00 batch start len:%d ' % (len(clanhash)))
@@ -2539,6 +2570,21 @@ async def loop():
                 Outlog(ERRFILE, 'error: %s e.args:%s' % (clan.guild.name if clan.guild is not None else 'Unknown', e.args))
 
         Outlog(ERRFILE, '05:00 batch end')
+
+    # クラバト3日前アラート
+    if nowtime == '05:00':
+        startdate = datetime.datetime.strptime(BATTLESTART, '%m/%d')
+        lastday = calendar.monthrange(now.year, now.month)[1]
+        if now.month != startdate.month and now.day == lastday - 8:
+            BATTLESTART = '%2d/%2d' % (now.month, lastday - 5)
+            BATTLEEND = '%2d/%2d' % (now.month, lastday - 1)
+
+            noticeclan = [c for c in clanhash.values() if c.admin and clan.inputchannel is not None]
+            if len(noticeclan) == 0:
+                noticeclan = [c for c in clanhash.values() if clan.inputchannel is not None]
+
+            for clan in noticeclan:
+                await clan.inputchannel.send('クランバトル期間を%s-%sに設定しました' % (BATTLESTART, BATTLEEND))
 
     #最終日の表示
     if nowtime == '00:00' and nowdate == DateCalc(BATTLEEND, 1):

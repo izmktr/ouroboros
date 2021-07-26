@@ -2576,12 +2576,13 @@ async def loop():
         startdate = datetime.datetime.strptime(BATTLESTART, '%m/%d')
         lastday = calendar.monthrange(now.year, now.month)[1]
         if now.month != startdate.month and now.day == lastday - 8:
-            BATTLESTART = '%2d/%2d' % (now.month, lastday - 5)
-            BATTLEEND = '%2d/%2d' % (now.month, lastday - 1)
+            BATTLESTART = '%02d/%02d' % (now.month, lastday - 5)
+            BATTLEEND = '%02d/%02d' % (now.month, lastday - 1)
+            GlobalStrage.Save()
 
-            noticeclan = [c for c in clanhash.values() if c.admin and clan.inputchannel is not None]
+            noticeclan = [c for c in clanhash.values() if c.admin and c.inputchannel is not None]
             if len(noticeclan) == 0:
-                noticeclan = [c for c in clanhash.values() if clan.inputchannel is not None]
+                noticeclan = [c for c in clanhash.values() if c.inputchannel is not None]
 
             for clan in noticeclan:
                 await clan.inputchannel.send('クランバトル期間を%s-%sに設定しました' % (BATTLESTART, BATTLEEND))

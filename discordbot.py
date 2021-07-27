@@ -1069,7 +1069,8 @@ class Clan():
         pickuplap = [None] * BOSSNUMBER
         message = []
 
-        pickuplap[bidx] = self.bosscount[bidx]
+        if self.IsAttackable(self.bosscount[bidx]):
+            pickuplap[bidx] = self.bosscount[bidx]
 
         if lap is not None:
             if lap + 1 in LevelUpLap:
@@ -1198,12 +1199,19 @@ class Clan():
                         self.TemporaryMessage(self.inputchannel, '巻き戻しました\nボスが違うときは、defeat/undefeat/setbossで調整してください')
                     
                     await self.AddReaction(message, 0 < overtime)
-
-                    return True
                 else:
                     self.TemporaryMessage(self.inputchannel, '巻き戻しに失敗しました')
+                return True
 
         react.removereaction = removereaction
+
+        async def deletereaction(payload):
+            atmember.Revert(payload.message_id)
+            if atmember.attackmessage.id == payload.message_id:
+                atmember.Cancel()
+            return True
+
+        react.deletereaction = deletereaction
 
         return react
 
@@ -2203,24 +2211,16 @@ class Clan():
         return False
 
     async def on_raw_message_delete(self, payload):
-        if payload.cached_message is None:
-            return False
+        react = self.messagereaction.pop(payload.message_id, None)
+        if react is not None and react.deletereaction is not None:
+            return await react.deletereaction(payload)
 
-        member = self.members.get(payload.cached_message.author.id)
+        member = self.members.get(payload.cached_message.author.id) if payload.cached_message is not None else None
         if member is None: return False
-
-        if member.Revert(payload.message_id) is not None:
-            member.Cancel()
-            return True
 
         if member.taskkill == payload.message_id:
             member.taskkill = 0
             return True
-
-        if payload.message_id in self.messagereaction:
-            func = self.messagereaction[payload.message_id]
-            if func.deletereaction is not None:
-                return await func.deletereaction(member, payload)
 
         return False
 

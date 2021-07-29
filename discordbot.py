@@ -595,7 +595,7 @@ class DamageControl():
         damagelist : List[DamageControlMember] = sorted([value for value in self.members.values()], key=cmp_to_key(Compare)) 
         totaldamage = sum([n.damage for n in damagelist])
 
-        attackmember = set([m for m in self.clanmembers.values() if m.IsAttack()])
+        attackmember = set([m for m in self.clanmembers.values() if m.IsAttack() and m.boss % BOSSNUMBER == self.bossindex])
 
         mes += '%s HP %d' % (BossName[self.bossindex] , self.remainhp)
         if 0 < totaldamage and totaldamage < self.remainhp:
@@ -2454,7 +2454,8 @@ class Clan():
         
         unfinish = sum([len(m) for m in fulllist])
         if len(self.members) != unfinish:
-            s += '**完凸 %d人**\n' % (len(self.members) - unfinish)
+            membernum = len(self.members)
+            s += '**完凸 %d人/%d人(%d凸/%d凸)**\n' % (membernum - unfinish, membernum, self.TotalSortieCount(), membernum * MAX_SORITE)
         
         return s
 

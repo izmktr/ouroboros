@@ -929,9 +929,9 @@ class Clan():
 
     @staticmethod
     async def SendMessage(channel, message : str):
-        post = await channel.send(message)
-        await asyncio.sleep(60)
         try:
+            post = await channel.send(message)
+            await asyncio.sleep(60)
             await post.delete()
         except (discord.errors.NotFound, discord.errors.Forbidden):
             pass
@@ -989,7 +989,10 @@ class Clan():
         reactemojis = self.emojis if not overkill else self.emojisoverkill
 
         for emoji in reactemojis:
-            await message.add_reaction(emoji)
+            try:
+                await message.add_reaction(emoji)
+            except (discord.errors.NotFound, discord.errors.Forbidden):
+                break
 
     async def RemoveReaction(self, message, overkill : bool, me):
         reactemojis = self.emojis if not overkill else self.emojisoverkill
@@ -1366,14 +1369,14 @@ class Clan():
                 raise ValueError
 
             data = [int(s) - 1 for s in sp]
-            minlap = min([m for m in data if 0 < m])
+            minlap = min([m for m in data if 0 <= m])
             overlap = minlap + 1 if minlap + 2 in LevelUpLap else minlap + 2
 
             if len([m for m in data if overlap < m]):
                 self.TemporaryMessage(message.channel, '周回数がおかしいデータがあります')
                 return False
 
-            self.bosscount = [m if 0 < m else overlap for m in data]
+            self.bosscount = [m if 0 <= m else overlap for m in data]
             self.TemporaryMessage(message.channel, 'ボスを設定しました')
         except ValueError:
             self.TemporaryMessage(message.channel, 'setboss [ボス周回数] × 5 でボスの周回数を設定します(0は未出現)\n例)setboss 5 4 0 0 4')
@@ -2610,10 +2613,9 @@ async def loop():
     #最終日の表示
     if nowtime == '00:00' and nowdate == DateCalc(BATTLEEND, 1):
         for clan in clanhash.values():
-            if nowdate == BATTLEEND:
-                if clan.inputchannel is not None:
-                    message = 'クランバトル終了です。お疲れさまでした。'
-                    await clan.inputchannel.send(message)
+            if clan.inputchannel is not None:
+                message = 'クランバトル終了です。お疲れさまでした。'
+                await clan.inputchannel.send(message)
     
     #リポートの催促
     shtime = now

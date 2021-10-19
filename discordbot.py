@@ -461,6 +461,7 @@ class DamageControl():
     def MemberSweep(self):
         if len([m for m in self.members.values() if m.status == 0]) == 0:
             self.members.clear()
+            self.active = False
 
     async def Remove(self, member : ClanMember):
         if member in self.members:
@@ -484,8 +485,12 @@ class DamageControl():
         if 0 < self.remainhp: return False
         return True
 
+    @staticmethod
+    def AttackBoss(member : ClanMember):
+        return member.boss % BOSSNUMBER if member.IsAttack() else -1
+
     def IsAttackMember(self, member : ClanMember):
-        return member.IsAttack() and member.boss % BOSSNUMBER == self.bossindex
+        return self.AttackBoss(member) == self.bossindex
 
     def IsSetRemainHp(self, clan : 'Clan', member : ClanMember):
         if self.IsAttackMember(member): return True
@@ -493,47 +498,6 @@ class DamageControl():
         for dc in clan.damagecontrol:
             if dc != self and dc.channel == self.channel: return False
         return True
-
-    def messageanlyze(self, clan : 'Clan', member : ClanMember, message):
-        # 残りHP計算
-        m = re.match('([@＠])([\s　]*)(\d+)', message.content)
-        if m:
-            if self.IsSetRemainHp(clan, member):
-                remainhp = int(m.group(3))
-                self.RemainHp(remainhp)
-                return True
-            else:
-                clan.TemporaryMessage(self.channel, 'ボスが確定しません')
-                return False
-        
-        if member.IsAttack() and member.boss % BOSSNUMBER == self.bossindex:
-            m = re.match('(\d+[s秒])([\s　]*)(\d+)([^\d]*.*)', message.content)
-            if m:
-                damage = int(m.group(3))
-                comment = str.strip(m.group(1) + m.group(4))
-                self.Damage(member, damage, comment)
-                return True
-
-            m = re.match('(\d\d\d+)([^\d]*.*)', message.content)
-            if m:
-                damage = int(m.group(1))
-                comment = str.strip(m.group(2))
-                self.Damage(member, damage, comment)
-                return True
-
-            m = re.match('([xX])([\s　]*)([\d]*)([^\d]*.*)', message.content)
-            if m:
-                damage = int(m.group(3)) if 0 < len(m.group(3)) else 0
-                comment = m.group(4)
-                self.Damage(member, damage, comment, 1)
-                return True
-        return False
-
-    async def on_message(self, clan : 'Clan', member : ClanMember, message):
-        ret = self.messageanlyze(clan, member, message)
-
-        if ret:
-            await self.SendResult()
 
     @staticmethod
     def OverTime(remainhp : int, damage : int, overkill : bool):
@@ -795,7 +759,8 @@ class Clan():
 
         self.commandlist = self.FuncMap()
 
-        self.damagechannel = [0] * BOSSNUMBER
+        # セーブ用のチャンネルIDを保存する変数
+        self.damagechannelid = [0] * BOSSNUMBER  
 
     def Save(self, clanid : int):
         dic = {
@@ -809,7 +774,7 @@ class Clan():
             'namedelimiter' : self.namedelimiter,
             'admin' : self.admin,
             'reservelist': [m.Serialize() for m in self.reservelist],
-            'damagecannel' : [(0 if m.channel is None else m.channel.id) for m in self.damagecontrol]
+            'damagecannelid' : [(0 if m.channel is None else m.channel.id) for m in self.damagecontrol]
         }
 
         for mid, member in self.members.items():
@@ -850,8 +815,8 @@ class Clan():
                     if reunit is not None:
                         clan.reservelist.append(reunit)
 
-            if 'damagecannel' in mdic:
-                clan.damagechannel = mdic['damagecannel']
+            if 'damagecannelid' in mdic:
+                clan.damagechannelid = mdic['damagecannelid']
 
             return clan
 
@@ -910,12 +875,12 @@ class Clan():
     def SetGuild(self, guild):
         self.guild = guild
 
-        for i, dc in enumerate(clan.damagechannel):
+        for i, dc in enumerate(self.damagechannelid):
             if 0 < dc:
                 for ch in guild.channels:
                     if dc == ch.id:
-                        clan.damagecontrol[i].SetChannel(ch)
-                        clan.damagecontrol[i].SetBossHp(self.BossMaxHp(self.bosscount[i], i))
+                        self.damagecontrol[i].SetChannel(ch)
+                        self.damagecontrol[i].SetBossHp(self.BossMaxHp(self.bosscount[i], i))
                         break
 
     def GetMember(self, author) -> ClanMember:
@@ -1377,6 +1342,10 @@ class Clan():
                 return False
 
             self.bosscount = [m if 0 <= m else overlap for m in data]
+
+            for i in range(5):
+                self.damagecontrol[i].SetBossHp(self.BossMaxHp(self.bosscount[i], i))
+
             self.TemporaryMessage(message.channel, 'ボスを設定しました')
         except ValueError:
             self.TemporaryMessage(message.channel, 'setboss [ボス周回数] × 5 でボスの周回数を設定します(0は未出現)\n例)setboss 5 4 0 0 4')
@@ -1973,20 +1942,34 @@ class Clan():
 
     async def DamageChannel(self, message, member : ClanMember, opt):
         try:
+            if opt == '':
+                result = ''
+                for i, dc in enumerate(self.damagecontrol):
+                    if dc is None or dc.channel is None:
+                        result += '%d: None\n' % (i + 1)
+                    else:
+                        result += '%d: %s\n' % (i + 1, dc.channel.name)
+                await message.channel.send(result)
+
+                return False
+
             if opt == 'all':
                 for dc in self.damagecontrol:
                     dc.SetChannel(message.channel)
-                return False
+                self.TemporaryMessage(message.channel, 'チャンネルを設定しました')
+                return True
 
             if opt == 'reset':
                 for dc in self.damagecontrol:
                     dc.SetChannel(None)
+                self.TemporaryMessage(message.channel, 'チャンネルをリセットしました')
                 return False
 
             bidx = int(opt) - 1
             if 0 <= bidx and bidx < BOSSNUMBER:
                 self.damagecontrol[bidx].SetChannel(message.channel)
                 self.TemporaryMessage(message.channel, 'チャンネルを設定しました')
+                return True
             else:
                 raise ValueError
         except ValueError:
@@ -2156,7 +2139,7 @@ class Clan():
             while 0 < route:
                 bidx = route % 10 - 1
                 if 0 <= bidx and bidx < BOSSNUMBER:
-                    subboss = -1 if self.IsAttackable(self.bosscount[bidx]) else 0
+                    subboss = 0 if self.IsAttackable(self.bosscount[bidx]) else -1
                     result.append(bidx + (self.bosscount[bidx] + addroute + subboss) * BOSSNUMBER)
                     route = route // 10
                 else:
@@ -2176,6 +2159,63 @@ class Clan():
     def SetInputChannel(self):
         if self.inputchannel is None:
             self.inputchannel = self.FindChannel(self.guild, inputchannel)
+
+    def GetDamageControl(self, channel):
+        return [m for m in self.damagecontrol if m.channel == channel]
+
+    def DamageControlMessage(self, member : ClanMember, message) -> DamageControl:
+        #ダメコン使ってないなら無視
+        dclist = self.GetDamageControl(message.channel)
+        print("dclistlen:", len(dclist))
+        if len(dclist) == 0:
+            return None
+
+        # 残りHP入力
+        m = re.match('([@＠])([\s　]*)(\d+)', message.content)
+        if m:
+            if len(dclist) == 1:
+                dc = dclist[0]
+            else:
+                actlist = [m for m in dclist if m.active]
+                if len(actlist) == 1:
+                    dc = actlist[0]
+                else:
+                    self.TemporaryMessage(message.channel, 'ボスが確定しません\n"残り [ボス番号] [残りHP]" を使ってください')
+                    return None
+
+            remainhp = int(m.group(3))
+            dc.RemainHp(remainhp)
+            return dc
+
+        # ダメージ入力                
+        if member.IsAttack():
+            dc = self.damagecontrol[member.boss % BOSSNUMBER]
+            if dc is None or dc.channel is None: return None
+            if dc.channel.id != message.channel.id:
+                print("channel diff.")
+                return None
+
+            m = re.match('(\d+[s秒])([\s　]*)(\d+)([^\d]*.*)', message.content)
+            if m:
+                damage = int(m.group(3))
+                comment = str.strip(m.group(1) + m.group(4))
+                dc.Damage(member, damage, comment)
+                return dc
+
+            m = re.match('(\d\d\d+)([^\d]*.*)', message.content)
+            if m:
+                damage = int(m.group(1))
+                comment = str.strip(m.group(2))
+                dc.Damage(member, damage, comment)
+                return dc
+
+            m = re.match('([xX])([\s　]*)([\d]*)([^\d]*.*)', message.content)
+            if m:
+                damage = int(m.group(3)) if 0 < len(m.group(3)) else 0
+                comment = m.group(4)
+                dc.Damage(member, damage, comment, 1)
+                return dc
+        return None
 
     async def on_message(self, message):
         if self.AllowMessage(message):
@@ -2206,10 +2246,10 @@ class Clan():
             member.UpdateActive()
 
             # 自動ダメコン計算
-            for damagecontrol in self.damagecontrol:
-                if damagecontrol.channel == message.channel:
-                    await damagecontrol.on_message(self, member, message)
-                    return False
+            ret = self.DamageControlMessage(member, message)
+
+            if ret is not None:
+                await ret.SendResult()
 
         return False
 

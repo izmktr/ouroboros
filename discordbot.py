@@ -99,6 +99,7 @@ class GlobalStrage:
         global BossName
         global BATTLESTART
         global BATTLEEND
+        global BossHpData
 
         with open(SETTINGFILE) as a:
             mdic =  json.load(a)
@@ -114,12 +115,16 @@ class GlobalStrage:
             if 'BATTLEEND' in mdic:
                 BATTLEEND = mdic['BATTLEEND']
 
+            if 'BossHpData' in mdic:
+                BossHpData = mdic['BossHpData']
+
     @staticmethod
     def Save():
         dic = {
             'BossName' : BossName,
             'BATTLESTART' : BATTLESTART,
             'BATTLEEND' : BATTLEEND,
+            'BossHpData' : BossHpData,
         }
 
         with open(SETTINGFILE, 'w') as a:
@@ -857,6 +862,7 @@ class Clan():
             (['dailyreset'], self.DailyReset),
             (['monthlyreset'], self.MonthlyReset),
             (['bossname'], self.BossName),
+            (['setbossmaxhp'], self.SetBossMaxHp),
             (['term'], self.Term),
             (['remain','残り'], self.Remain),
 #            (['damage','ダメ','ダメージ'], self.Damage),
@@ -1754,6 +1760,42 @@ class Clan():
         self.TemporaryMessage(message.channel, 'ボスを更新しました'+','.join(BossName))
         return True
 
+    async def SetBossMaxHp(self, message, member : ClanMember, opt):
+        if not self.admin: return False
+        if not message.author.guild_permissions.administrator: return False
+        channel = message.channel
+
+        try:
+            array = opt.split(',')
+            step = int(array[0]) - 1
+            hparray = [int(m) for m in array[1:]]
+        except ValueError:
+            hparray = []
+
+        if BOSSNUMBER != len(hparray):
+            await channel.send('usage) setbossmaxhp step,boss1,boss2,boss3,boss4,boss5')
+            return
+        
+        global BossHpData
+        global BossLapScore
+
+        for i, hp in enumerate(hparray):
+            BossHpData[step][i][0] = hp
+
+        BossLapScore.clear()
+        for l in BossHpData:
+            lapscore = 0
+            for _i in l:
+                lapscore += _i[0] * _i[1]
+                _i[2] = _i[0] * _i[1]
+            BossLapScore.append(lapscore)
+
+        GlobalStrage.Save()
+
+        self.TemporaryMessage(message.channel, 'ボスを更新しました'+','.join(BossName))
+        return True
+
+
     async def Term(self, message, member : ClanMember, opt):
         if not self.admin: return False
         if not message.author.guild_permissions.administrator: return False
@@ -2166,7 +2208,6 @@ class Clan():
     def DamageControlMessage(self, member : ClanMember, message) -> DamageControl:
         #ダメコン使ってないなら無視
         dclist = self.GetDamageControl(message.channel)
-        print("dclistlen:", len(dclist))
         if len(dclist) == 0:
             return None
 

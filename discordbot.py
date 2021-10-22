@@ -2233,7 +2233,6 @@ class Clan():
             dc = self.damagecontrol[member.boss % BOSSNUMBER]
             if dc is None or dc.channel is None: return None
             if dc.channel.id != message.channel.id:
-                print("channel diff.")
                 return None
 
             m = re.match('(\d+[s秒])([\s　]*)(\d+)([^\d]*.*)', message.content)

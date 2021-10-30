@@ -170,25 +170,25 @@ class ClanScore:
         return None
 
 alphamatch = re.compile('^[a-z]+')
-def Command(str, cmd):
+def Command(inputline, cmd):
     if isinstance(cmd, list):
         for c in cmd:
-            ret = Command(str, c)
+            ret = Command(inputline, c)
             if ret is not None:
                 return ret
         return None
 
     if alphamatch.match(cmd):
-        result = alphamatch.match(str)
+        result = alphamatch.match(inputline)
         if result is None:
             return None
 
         if result.group(0) == cmd:
-            return str[len(cmd):].strip()
+            return inputline[len(cmd):].strip()
     else:
         length = len(cmd)
-        if str[:length] == cmd:
-            return str[length:].strip()
+        if inputline[:length] == cmd:
+            return inputline[length:].strip()
     
     return None
 
@@ -356,22 +356,22 @@ class ClanMember():
         self.attacktime = [None] * MAX_SORITE
 
     def History(self):
-        str = ''
+        msg = ''
         for h in self.history:
             if 0 <= h.boss:
-                str += '%d凸目 %d周目:%s' % (h.sortie + 1,
+                msg += '%d凸目 %d周目:%s' % (h.sortie + 1,
                 h.boss // BOSSNUMBER + 1, 
                 BossName[h.boss % BOSSNUMBER])
             else:
-                str += '%d凸目 ボス不明 :' % (h.sortie + 1)
+                msg += '%d凸目 ボス不明 :' % (h.sortie + 1)
 
             if h.defeat:
-                str += ' %d秒 討伐' % (h.overtime)
+                msg += ' %d秒 討伐' % (h.overtime)
 
-            str += '\n'
+            msg += '\n'
 
-        if str == '' : str = '履歴がありません'
-        return str
+        if msg == '' : msg = '履歴がありません'
+        return msg
 
     selializemember = [
         'name', 
@@ -590,19 +590,23 @@ class DamageControl():
         for m in damagelist:
             if m.status == 0:
                 attackmember.discard(m.member)
+                suffix = '' if m.mark == 0 else "\u2620"
+                if 0 < m.damage:
+                    suffix += '%d' % m.damage
 
-                mes += '\n%s %s%d' % (m.member.DecoName('nOT'), '' if m.mark == 0 else '×', m.damage)
+                mes += '\n%s %s' % (m.member.DecoName('nOT'), suffix)
+                if m.message != '':
+                    mes += ' ' + m.message
+
                 if self.remainhp <= m.damage:
                     if m.member.IsOverkill():
                         mes += ' 持越'
                     else:
                         mes += ' %d秒' % (self.OverTime(self.remainhp, m.damage, False))
                     
-                    if m.message != '':
-                        mes += ' ' + m.message
-
                 else :
                     dinfo = self.DefeatInfomation(damagelist, m)
+
                     if 0 < len(dinfo):
                         mes += ''. join(['  →%s %d秒' % (d[0], d[1]) for d in dinfo])
                     else:
@@ -868,7 +872,8 @@ class Clan():
 #            (['damage','ダメ','ダメージ'], self.Damage),
 #            (['pd'], self.PhantomDamage),
 #            (['dtest'], self.DamageTest),
-#            (['clanattack'], self.AllClanAttack),
+            (['clanattack'], self.AllClanAttack),
+            (['bosshistory'], self.BossHistory),
             (['clanreport'], self.AllClanReport),
             (['active', 'アクティブ'], self.ActiveMember),
             (['servermessage'], self.ServerMessage),
@@ -1765,6 +1770,16 @@ class Clan():
         if not message.author.guild_permissions.administrator: return False
         channel = message.channel
 
+        global BossHpData
+        global BossLapScore
+
+        if opt == '':
+            msg = ''
+            for step, bdata in enumerate(BossHpData):
+                msg += '%d段階目 %s\n' % (step + 1, ','.join([str(m[0]) for m in bdata]))
+            await message.channel.send(msg)
+            return False
+
         try:
             array = opt.split(',')
             step = int(array[0]) - 1
@@ -1776,9 +1791,6 @@ class Clan():
             await channel.send('usage) setbossmaxhp step,boss1,boss2,boss3,boss4,boss5')
             return
         
-        global BossHpData
-        global BossLapScore
-
         for i, hp in enumerate(hparray):
             BossHpData[step][i][0] = hp
 
@@ -1792,7 +1804,8 @@ class Clan():
 
         GlobalStrage.Save()
 
-        self.TemporaryMessage(message.channel, 'ボスを更新しました'+','.join(BossName))
+        msg = '%d段階目 %s\n' % (step + 1, ','.join([str(m) for m in hparray]))
+        self.TemporaryMessage(message.channel, 'ボスHPを更新しました\n' + msg)
         return True
 
 
@@ -1838,7 +1851,15 @@ class Clan():
                 if 0 < atn:
                     mes += '[%s] %d %s\n' % (guild.name, atn, ' '.join(attackmembers))
 
-        await channel.send(mes)
+        await channel.send(mes if mes != '' else 'attackがありません')
+
+        return False
+
+    async def BossHistory(self, message, member : ClanMember, opt):
+        allhistory = []
+
+        
+        channel = message.channel
 
         return False
 
@@ -2235,7 +2256,7 @@ class Clan():
             if dc.channel.id != message.channel.id:
                 return None
 
-            m = re.match('(\d+[s秒])([\s　]*)(\d+)([^\d]*.*)', message.content)
+            m = re.match('(\d+[sS秒ｓＳ])([\s　]*)(\d+)([^\d]*.*)', message.content)
             if m:
                 damage = int(m.group(3))
                 comment = str.strip(m.group(1) + m.group(4))
@@ -2371,6 +2392,7 @@ class Clan():
                 return lv - 1
         return 0
 
+    #平均ラッププレイヤー数
     def UpdateLapPlayer(self) -> float:
         lvup = self.GetLevelUpLap(self.bossLap)
         length = lvup - self.bossLap
@@ -2683,19 +2705,24 @@ async def loop():
             BATTLEEND = '%02d/%02d' % (now.month, lastday - 1)
             GlobalStrage.Save()
 
-            noticeclan = [c for c in clanhash.values() if c.admin and c.inputchannel is not None]
-            if len(noticeclan) == 0:
-                noticeclan = [c for c in clanhash.values() if c.inputchannel is not None]
-
-            for clan in noticeclan:
-                await clan.inputchannel.send('クランバトル期間を%s-%sに設定しました' % (BATTLESTART, BATTLEEND))
+            try:
+                noticeclan = [c for c in clanhash.values() if c.admin and c.inputchannel is not None]
+                if len(noticeclan) == 0:
+                    noticeclan = [c for c in clanhash.values() if c.inputchannel is not None]
+                for clan in noticeclan:
+                    await clan.inputchannel.send('クランバトル期間を%s-%sに設定しました' % (BATTLESTART, BATTLEEND))
+            except Exception as e:
+                Outlog(ERRFILE, 'error: %s e.args:%s' % (clan.guild.name if clan.guild is not None else 'Unknown', e.args))
 
     #最終日の表示
     if nowtime == '00:00' and nowdate == DateCalc(BATTLEEND, 1):
-        for clan in clanhash.values():
-            if clan.inputchannel is not None:
-                message = 'クランバトル終了です。お疲れさまでした。'
-                await clan.inputchannel.send(message)
+        try:
+            for clan in clanhash.values():
+                if clan.inputchannel is not None:
+                    message = 'クランバトル終了です。お疲れさまでした。'
+                    await clan.inputchannel.send(message)
+        except Exception as e:
+            Outlog(ERRFILE, 'error: %s e.args:%s' % (clan.guild.name if clan.guild is not None else 'Unknown', e.args))
     
     #リポートの催促
     shtime = now

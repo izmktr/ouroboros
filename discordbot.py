@@ -17,7 +17,7 @@ MAX_SORITE = 3
 
 BATTLESTART = '06/25'
 BATTLEEND = '06/29'
-LevelUpLap = [4, 11, 31, 41]
+LevelUpLap = [4, 11, 31, 39]
 BossHpData = [
     [   [600, 1.2], [800, 1.2], [1000, 1.3], [1200, 1.4], [1500, 1.5]   ],
     [   [600, 1.6], [800, 1.6], [1000, 1.8], [1200, 1.9], [1500, 2.0],  ],
@@ -305,6 +305,9 @@ class ClanMember():
                 atag = self.AttackTag(True)
                 if 0 < len(atag):
                     s += '[%s]' % atag
+            elif c == 'v':
+                if self.IsAttack() and self.IsOverkill():
+                    s += '[持]'
             else: s += c
 
         return s
@@ -555,8 +558,8 @@ class DamageControl():
         mes = ''
 
         def Compare(a : DamageControlMember, b : DamageControlMember):
-            ao = a.member.IsOverkill()
-            bo = b.member.IsOverkill()
+            ao = a.member.IsOverkill() if 0 < a.damage else False
+            bo = b.member.IsOverkill() if 0 < b.damage else False
 
             if ao == bo: return sign(b.damage - a.damage)
             return sign(bo - ao)
@@ -594,13 +597,13 @@ class DamageControl():
                 if 0 < m.damage:
                     suffix += '%d' % m.damage
 
-                mes += '\n%s %s' % (m.member.DecoName('nOT'), suffix)
+                mes += '\n%s %s' % (m.member.DecoName('nOTv'), suffix)
                 if m.message != '':
                     mes += ' ' + m.message
 
                 if self.remainhp <= m.damage:
                     if m.member.IsOverkill():
-                        mes += ' 持越'
+                        mes += ' 0秒'
                     else:
                         mes += ' %d秒' % (self.OverTime(self.remainhp, m.damage, False))
                     
@@ -610,7 +613,8 @@ class DamageControl():
                     if 0 < len(dinfo):
                         mes += ''. join(['  →%s %d秒' % (d[0], d[1]) for d in dinfo])
                     else:
-                        mes += '  残り %d' % (self.remainhp - m.damage)
+                        if 0 < m.damage:
+                            mes += '  残り %d' % (self.remainhp - m.damage)
         
         finishmember = [m.member.DecoName('nOT') for m in damagelist if m.status != 0]
 
@@ -831,7 +835,7 @@ class Clan():
 
     def FuncMap(self):
         return [
-            (['a', '凸'], self.Attack),
+            (['a', '凸', 'あ'], self.Attack),
             (['c', '持'], self.ContinuesAttack),
             (['cancel'], self.Cancel),
             (['reload'], self.Reload),
@@ -1094,6 +1098,16 @@ class Clan():
 
         return False
 
+    async def DamageControlDefeat(self, boss):
+        bidx = boss % BOSSNUMBER
+        unfinishmember = [m.mention for m in self.members.values() if m.IsAttack() and m.boss == boss]
+
+        if 0 < len(unfinishmember):
+            mentions = ' '.join(unfinishmember) + ' 戦闘を抜けて報告してください'
+            await self.damagecontrol[bidx].SendFinish('%s の討伐お疲れさまです\n%s' % (BossName[bidx], mentions))
+        else:
+            await self.damagecontrol[bidx].SendFinish('%s の討伐お疲れさまです' % (BossName[bidx]))
+
     def CreateAttackReaction(self, atmember : ClanMember, message, boss : int, sortie : int, overtime : int):
         react = MessageReaction(atmember)
 
@@ -1125,7 +1139,7 @@ class Clan():
                     member.Overkill(payload.message_id, (idx + 1) * 10)
 
                 bidx = boss % BOSSNUMBER
-                await self.damagecontrol[bidx].SendFinish('%s の討伐お疲れさまです' % (BossName[bidx]))
+                await self.DamageControlDefeat(boss)
 
                 reboss = RESERVELAP * BOSSNUMBER + bidx
                 self.RemoveReserve(lambda m: m.member == member and m.boss == reboss)
@@ -1199,6 +1213,7 @@ class Clan():
             num = int(opt)
             bidx = num - 1 if num < 10 else num // 10 - 1
             sortie = -1 if num < 10 else num % 10 - 1
+
             if bidx < 0 or BOSSNUMBER <= bidx or MAX_SORITE <= sortie:
                 raise ValueError
         except ValueError:
@@ -1305,6 +1320,9 @@ class Clan():
         except ValueError:
             self.TemporaryMessage(message.channel, 'defeat [ボス番号] でボスを討伐扱いにします')
             return False
+
+        boss = self.bosscount[bidx] * BOSSNUMBER + bidx
+        await self.DamageControlDefeat(boss)
 
         newlap = self.DefeatBoss(bidx)
         mention = self.CreateNotice(newlap, bidx)
@@ -2354,7 +2372,7 @@ class Clan():
 
     def BossMaxHp(self, lap : int, bossindex : int):
         if bossindex < 0 or BOSSNUMBER <= bossindex: return 0
-        return BossHpData[self.BossLevel(lap) - 1][bossindex][0]
+        return BossHpData[self.BossLevel(lap)][bossindex][0]
 
     async def on_raw_reaction_add(self, payload):
         member : ClanMember = self.members.get(payload.user_id)
@@ -2417,15 +2435,15 @@ class Clan():
         return (self.lapAttackCount[self.bossLap - 1] - baselap) / length
 
     def BossLevel(self, lap):
-        level = 1
+        level = 0
         for lvlap in LevelUpLap:
-            if lap < lvlap :
+            if lap < lvlap - 1 :
                 return level
             level += 1
         return level
 
     def NextLvUpLap(self, bossindex):
-        levelindex = self.BossLevel(self.bosscount[bossindex]) - 1
+        levelindex = self.BossLevel(self.bosscount[bossindex])
 
         if len(LevelUpLap) <= levelindex: return 0
         return (LevelUpLap[levelindex] - self.bossLap - 1)
@@ -2498,7 +2516,7 @@ class Clan():
         s = '攻撃中\n'
         for at in attacklist:
             if 0 < len(at):
-                namelist = [m.DecoName('nOT') for m in at]
+                namelist = [m.DecoName('nOTv') for m in at]
                 s += '%s %d人 %s\n' % (self.numbermarks[at[0].boss % BOSSNUMBER + 1], len(at), ' '.join(namelist))
 
         return s

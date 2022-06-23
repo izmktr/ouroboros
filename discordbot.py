@@ -1233,6 +1233,10 @@ class Clan():
                 return False
 
             if idx == 0:
+                avg = self.bossAttackAverage[boss % BOSSNUMBER]
+                if 0 < avg and avg <= 0.5:
+                    self.TemporaryMessage(self.inputchannel, '%s スタンプの押し間違いの可能性があります' % member.mention)
+
                 member.Finish(payload.message_id)
                 reboss = RESERVELAP * BOSSNUMBER + boss % BOSSNUMBER
                 self.RemoveReserve(lambda m: m.member == member and m.boss in [boss, reboss])

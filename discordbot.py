@@ -923,8 +923,10 @@ class Clan():
             (['reset'], self.MemberReset),
             (['history'], self.History),
 #            (['overtime', '持ち越し時間'], self.OverTime),
-#            (['defeatlog'], self.DefeatLog),
+            (['defeatlog'], self.DefeatLog),
 #            (['attacklog'], self.AttackLog),
+            (['defeatgraph'], self.DefeatGraph),
+#            (['attackgraph'], self.AttackGraph),
             (['score'], self.Score),
             (['settingreload'], self.SettingReload),
             (['memberdelete'], self.MemberDelete),
@@ -1494,7 +1496,7 @@ class Clan():
         if boss // BOSSNUMBER == RESERVELAP:
             return '%dboss' % (boss % BOSSNUMBER + 1)
         else:
-            return '%d周%dboss' % (boss // BOSSNUMBER + 1, boss % BOSSNUMBER + 1)
+            return '%d周 %dboss' % (boss // BOSSNUMBER + 1, boss % BOSSNUMBER + 1)
 
     async def Reserve(self, message, member : ClanMember, opt : str):
         strarray = opt.split(' ')
@@ -1602,22 +1604,23 @@ class Clan():
 
             idx = self.numbermarks.index(payload.emoji.name) - 1
             if 0 <= idx and idx < BOSSNUMBER:
-                self.AddReserve([idx], member, None)
+                boss = self.bosscount[idx] * BOSSNUMBER + idx
+                self.AddReserve([boss], member, None)
                 return True
             return False
 
-        async def deletereaction(member : ClanMember, payload):
+        async def removereaction(member : ClanMember, payload):
             if payload.emoji.name not in self.numbermarks:
                 return False
 
             idx = self.numbermarks.index(payload.emoji.name) - 1
             if 0 <= idx and idx < BOSSNUMBER:
-                self.RemoveReserve(lambda m: m.member == member and m.boss % BOSSNUMBER == idx)
+                a = self.RemoveReserve(lambda m: m.member == member and m.boss % BOSSNUMBER == idx)
                 return True
             return False
 
         react.addreaction = addreaction
-        react.deletereaction = deletereaction
+        react.removereaction = removereaction
 
         return react
 
@@ -1926,9 +1929,7 @@ class Clan():
         return True
 
     async def DefeatLog(self, message, member : ClanMember, opt):
-        text = ''
-        for n in self.defeatTime:
-            text += n + '\n'
+        text = '\n'.join(self.defeatTime)
 
         with StringIO(text) as bs:
             await message.channel.send(file=discord.File(bs, 'defeatlog.txt'))
@@ -3063,8 +3064,7 @@ async def on_raw_reaction_remove(payload):
 
     clan = clanhash.get(payload.guild_id)
 
-    if clan is not None and clan.IsInput(payload.channel_id):
-
+    if clan is not None:
         result = await clan.on_raw_reaction_remove(payload)
         if result:
             clan.Save(payload.guild_id)

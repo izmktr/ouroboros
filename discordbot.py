@@ -1492,9 +1492,9 @@ class Clan():
 
     def RouteString(self, boss):
         if boss // BOSSNUMBER == RESERVELAP:
-            return '未定-%d' % (boss % BOSSNUMBER + 1)
+            return '%dboss' % (boss % BOSSNUMBER + 1)
         else:
-            return '%d-%d' % (boss // BOSSNUMBER + 1, boss % BOSSNUMBER + 1)
+            return '%d周%dboss' % (boss // BOSSNUMBER + 1, boss % BOSSNUMBER + 1)
 
     async def Reserve(self, message, member : ClanMember, opt : str):
         strarray = opt.split(' ')
@@ -1597,22 +1597,24 @@ class Clan():
         react = MessageReaction(atmember)
 
         async def addreaction(member : ClanMember, payload):
-            idx = self.emojiindex(payload.emoji.name)
-            if idx is None:
+            if payload.emoji.name not in self.numbermarks:
                 return False
 
-            if 0 <= idx and idx < 5:
+            idx = self.numbermarks.index(payload.emoji.name) - 1
+            if 0 <= idx and idx < BOSSNUMBER:
                 self.AddReserve([idx], member, None)
                 return True
+            return False
 
         async def deletereaction(member : ClanMember, payload):
-            idx = self.emojiindex(payload.emoji.name)
-            if idx is None:
+            if payload.emoji.name not in self.numbermarks:
                 return False
 
-            if 0 <= idx and idx < 5:
-
+            idx = self.numbermarks.index(payload.emoji.name) - 1
+            if 0 <= idx and idx < BOSSNUMBER:
+                self.RemoveReserve(lambda m: m.member == member and m.boss % BOSSNUMBER == idx)
                 return True
+            return False
 
         react.addreaction = addreaction
         react.deletereaction = deletereaction
@@ -1621,30 +1623,10 @@ class Clan():
 
     async def Recruit(self, message, member : ClanMember, opt : str):
         if opt == '':
-            bossdata = self.AliveBoss()
-        else:
-            bossdata = set()
-            for n in opt:
-                try:
-                    b = int(n) - 1
-                    bossdata.add(b)
-                except ValueError:
-                    pass
-            if len(bossdata) == 0 or 0 < len(bossdata - self.AliveBoss()):
-                await message.channel.send('ボスの数値が読み取れません')
-                return False
-
-        recruitmes = await message.channel.send('ボスを討伐する人はスタンプを押してください')
-
-        for stamp in bossdata:
-            await recruitmes.add_reaction(self.numbermarks[stamp + 1])
+            self.TemporaryMessage(message.channel, 'all またはボスの番号を入れてください')
+            return False
         
-        self.messagereaction[recruitmes.id] = self.CreateRecroitReaction(member, message, bossdata)
-
-        return False
-
-    async def Recruit(self, message, member : ClanMember, opt : str):
-        if opt == '':
+        if opt == 'all':
             bossdata = self.AliveBoss()
         else:
             bossdata = set()
@@ -2719,12 +2701,11 @@ class Clan():
         self.damagecontrol[bossindex].SetBossHp(self.BossMaxHp(self.bosscount[bossindex], bossindex))
 
     def AliveBoss(self) -> set:
-        result = set()
         minlap = self.MinLap()
-        result.add([i for i in range(BOSSNUMBER) if self.bosscount[i] == minlap])
+        result = set([i for i in range(BOSSNUMBER) if self.bosscount[i] == minlap])
 
         if (minlap + 2) not in LevelUpLap:
-            result.add([i for i in range(BOSSNUMBER) if self.bosscount[i] == minlap + 1])
+            result |= set([i for i in range(BOSSNUMBER) if self.bosscount[i] == minlap + 1])
        
         return result
 

@@ -75,7 +75,7 @@ T = TypeVar('T')
 BOSSNUMBER = len(BossName)
 
 # 移動平均に使うラップ数
-MA_LAP = 3
+MA_LAP = 5
 
 # 周回を指定しない予約用の下駄
 RESERVELAP = 1000

@@ -65,8 +65,9 @@ import os
 import re
 import codecs
 import random
+from PIL import Image, ImageDraw, ImageFont
 from typing import List, Dict, Any, Optional, Tuple
-from io import StringIO
+from io import BytesIO, StringIO
 from typing import Sequence, TypeVar, Callable
 from functools import cmp_to_key
 
@@ -907,7 +908,7 @@ class Clan():
             (['unplace', '配置取り消し', '配置取消'], self.Unplace),
             (['place', '配置'], self.Place),
             (['recruit', '募集'], self.Recruit),
-            (['attackplan','残り予定'], self.AttackPlan),
+            (['attackplan','攻撃予定'], self.AttackPlan),
             (['memberplan','メンバー予定'], self.MemberPlan),
             (['plan', '予定'], self.Plan),
             (['refresh'], self.Refresh),
@@ -941,7 +942,7 @@ class Clan():
 #            (['dtest'], self.DamageTest),
             (['clanattack'], self.AllClanAttack),
             (['bosshistory'], self.BossHistory),
-            (['bossaverage'], self.BossAverage),
+            (['bossaverage', 'ボス平均'], self.BossAverage),
             (['clanreport'], self.AllClanReport),
             (['active', 'アクティブ'], self.ActiveMember),
             (['servermessage'], self.ServerMessage),
@@ -1089,17 +1090,6 @@ class Clan():
                     await message.remove_reaction(emoji, me)
                 except (discord.errors.NotFound, discord.errors.Forbidden):
                     break
-
-    def AttackableLap(self, boss) -> int:
-        minlap = self.MinLap()
-
-        if minlap == self.bosscount[boss]:
-            return minlap
-
-        if (minlap + 2) in LevelUpLap:
-            return minlap + 2
-
-        return self.bosscount[boss]
 
     async def MemberRefresh(self):
         if self.guild is None: return
@@ -1484,7 +1474,7 @@ class Clan():
 
             self.bosscount = [m if 0 <= m else overlap for m in data]
 
-            for i in range(5):
+            for i in range(BOSSNUMBER):
                 self.damagecontrol[i].SetBossHp(self.BossMaxHp(self.bosscount[i], i))
 
             self.TemporaryMessage(message.channel, 'ボスを設定しました')
@@ -1946,6 +1936,162 @@ class Clan():
 
         with StringIO(text) as bs:
             await message.channel.send(file=discord.File(bs, 'attacklog.txt'))
+        return False
+
+    def CreateDefeatLapTime(self, defeatminute : List[int]) -> List[int]:
+        def lapmax(lap):
+            return max(defeatminute[lap * BOSSNUMBER:(lap + 1) * BOSSNUMBER - 1])
+        return [lapmax(lap) for lap in range(len(defeatminute) // BOSSNUMBER)]
+
+    def CreateDefeatTimeMinutesList(self) -> List:
+        result = []
+        maxvalue = 24 * 60 * 100
+
+        minstr = min([m for m in self.defeatTime if m is not None and 0 < len(m)])
+        mindate = datetime.datetime.strptime(minstr, "%Y/%m/%d %H:%M:%S")
+        basedate = datetime.datetime(year=mindate.year, month=mindate.month, day=mindate.day, hour=5)
+
+        for d in self.defeatTime:
+            if 0 < len(d):
+                date = datetime.datetime.strptime(d, "%Y/%m/%d %H:%M:%S")
+                minute = int((date - basedate).total_seconds()) // 60
+                result.append(minute)
+            else:
+                result.append(maxvalue)
+
+        gap = len(result) % BOSSNUMBER
+        if 0 < gap:
+            result.extend([maxvalue] * (BOSSNUMBER - gap))
+
+        return result
+    
+    def CreateDefeatGraph(self, days : int) -> BytesIO:
+        day_width = 30          # 日付部分の横幅
+
+        hour_height = 12         # 時刻部分の縦幅
+        widthperhour = 30    # 1時間の幅
+
+        boss_height = 4     # ボスの高さ
+        boss_gap = 2        # ボスとボスとの間
+        lap_height = 16     # 周回数表示の高さ
+        day_height = (boss_height + boss_gap) * BOSSNUMBER + lap_height
+                            # 一日分の高さ
+
+        fontsize = 12       # フォントの大きさ
+
+        border = 4          # 周りの枠
+
+        backcolor = (240, 240, 240)     #背景色
+        linecolor = (255, 255, 255)
+        fontcolor = (0, 0, 0)
+        bosscolor = [(100, 149, 237), (255, 69, 0)]
+        lapcolor = (34, 139, 34)
+
+        bosslist = self.CreateDefeatTimeMinutesList()
+        laplist = self.CreateDefeatLapTime(bosslist)
+        maxlap = len(laplist)
+
+        def ConvWidth(minute):
+            return min(minute * widthperhour // 60, 60 * 24)
+
+        maxminute = 24 * 60 * 100
+        bosslist.extend([maxminute] * BOSSNUMBER * 2)
+        laplist.extend([maxminute] * 2)
+
+        width = day_width + widthperhour * 24 + border * 2
+        height = hour_height + day_height * days + border * 2
+        im = Image.new("RGB", (width, height), backcolor)
+        draw = ImageDraw.Draw(im)
+        font = ImageFont.truetype('arial.ttf', fontsize)
+
+        #ライン作成
+        hour_y = (hour_height - fontsize) / 2
+        for i in range(25):
+            x = day_width + i * widthperhour + border
+            draw.line((x, hour_height + border, x, height - hour_height + border), fill = linecolor)
+            if i < 24:
+                draw.text((x, hour_y + border), '%d' % ((i + 5) % 24), fill = fontcolor, font = font)
+
+        #グラフ部分作成
+        startdate = datetime.datetime.strptime(BATTLESTART, "%m/%d")
+        draw.text((border + day_width, border + hour_height), '1', fill = fontcolor, font = font)
+
+        for d in range(days):
+            # 日付部分の表示
+            dx = border
+            dy = border + hour_height + day_height * d
+            targetdate = startdate + datetime.timedelta(days=d)
+            datestr = '%2d/%2d' % (targetdate.month, targetdate.day)
+            draw.text((dx, dy + hour_height + (day_height - fontsize) // 2), datestr, fill = fontcolor, font = font)
+
+            # グラフ部分の表示
+            gx = border + day_width
+            gy = border + hour_height + day_height * d
+
+            daygap = 24 * 60 * d
+            for b in range(BOSSNUMBER):
+                bx = gx
+                by = gy + lap_height + (boss_height +  boss_gap) * b
+
+                basemin = 0
+                endflag = False
+                for lap in range(maxlap + 1):
+                    lapmin = laplist[lap] - daygap
+                    if lapmin < 0:
+                        continue
+                    if 24 * 60 < lapmin:
+                        lapmin = 24 * 60
+                        endflag = True
+
+                    defeatmin = bosslist[BOSSNUMBER * lap + b] - daygap
+                    rightvalue = min(defeatmin, lapmin)
+                    if basemin < rightvalue:
+                        rect = (bx + ConvWidth(basemin), by, bx + ConvWidth(rightvalue), by + boss_height)
+                        draw.rectangle(rect, fill = bosscolor[0])
+                        basemin = defeatmin
+
+                    nextdefeatmin = bosslist[BOSSNUMBER * (lap + 1) + b] - daygap
+                    rightvalue = min(nextdefeatmin, lapmin)
+                    # 周回が上がる最終ラップでは、赤グラフは存在しない
+                    if basemin < rightvalue and (lap + 2) not in LevelUpLap:
+                        rect = (bx + ConvWidth(basemin), by, bx + ConvWidth(rightvalue), by + boss_height)
+                        draw.rectangle(rect, fill = bosscolor[1])
+                    
+                    basemin = lapmin
+
+                    if endflag:
+                        break
+                    
+            # 周回の数字表示
+            for lap in range(maxlap):
+                lapmin = laplist[lap] - daygap
+                if lapmin < 0:
+                    continue
+                if 24 * 60 <= lapmin:
+                    break
+                draw.line((gx + ConvWidth(lapmin), gy + 1, gx + ConvWidth(lapmin), gy + day_height - 1), fill = lapcolor)
+                draw.text((gx + ConvWidth(lapmin), gy), '%d' % (lap + 2), fill = fontcolor, font = font)
+    
+        output = BytesIO()
+        im.save(output, format = 'PNG')
+
+        return output
+
+    async def DefeatGraph(self, message, member : ClanMember, opt):
+        day = min(cbday + 1, CLANBATTLETERM)
+
+        if 0 < day:
+            output = self.CreateDefeatGraph(day)
+
+            with BytesIO(output.getbuffer()) as bs:
+                await message.channel.send(file=discord.File(bs, 'defeatgraph.png'))
+        else:
+            self.TemporaryMessage(message.channel, 'データがありません')
+
+        return False
+
+    async def AttackGraph(self, message, member : ClanMember, opt):
+
         return False
 
     async def Score(self, message, member : ClanMember, opt):

@@ -1206,6 +1206,13 @@ class Clan():
         else:
             await self.damagecontrol[bidx].SendFinish('%s の討伐お疲れさまです' % (BossName[bidx]))
 
+    def checkStampWarning(self, boss : int):
+        bossindex = boss % BOSSNUMBER
+        avg = self.bossAttackAverage[bossindex]
+        if 0 < avg and avg <= 0.5:
+            return True
+        return False
+
     def CreateAttackReaction(self, atmember : ClanMember, message, boss : int, sortie : int, overtime : int):
         react = MessageReaction(atmember)
 
@@ -1223,11 +1230,10 @@ class Clan():
                 return False
 
             if idx == 0:
-                avg = self.bossAttackAverage[boss % BOSSNUMBER]
-                if 0 < avg and avg <= 0.5:
-                    self.TemporaryMessage(self.inputchannel, '%s スタンプの押し間違いの可能性があります' % member.mention)
+                if self.checkStampWarning(boss):
+                    self.TemporaryMessage(self.inputchannel, '%s ボス未討伐の報告で間違いないですか？' % member.mention)
 
-                member.Finish(payload.message_id)
+                member.Finish(payload.message_id, False, 0.5 if member.IsOverkill() else 1.0)
                 reboss = RESERVELAP * BOSSNUMBER + boss % BOSSNUMBER
                 self.RemoveReserve(lambda m: m.member == member and m.boss in [boss, reboss])
 

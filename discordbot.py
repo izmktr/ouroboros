@@ -18,6 +18,7 @@ MAX_SORITE = 3
 BATTLESTART = '06/25'
 BATTLEEND = '06/29'
 CLANBATTLETERM = 5
+DAY_MINUTES = 24 * 60
 
 LevelUpLap = [4, 11, 31, 39]
 BossHpData = [
@@ -49,6 +50,7 @@ for l in BossHpData:
 
 import enum
 from math import floor
+import math
 from re import M, match, split
 from sre_constants import ATCODES, MARK
 from types import MemberDescriptorType
@@ -1041,13 +1043,8 @@ class Clan():
                 if h.boss % BOSSNUMBER != boss: return False
                 return lowerlap * BOSSNUMBER <= h.boss and h.boss < upperlap * BOSSNUMBER
 
-            attack = 0.0
-            for member in self.members.values():
-                attack += sum([his.sortiecount for his in member.history if hitboss(his)])
-
-            attack += sum([his.sortiecount for his in self.bosshistory if hitboss(his)])
-            
-            self.bossAttackAverage[boss] = attack / (upperlap - lowerlap)
+            sortie = sum([h.sortiecount for h in self.AllHistory() if hitboss(h)])
+            self.bossAttackAverage[boss] = sortie / (upperlap - lowerlap)
 
     def AddStamp(self, messageid):
         if messageid in self.stampcheck:
@@ -1694,14 +1691,19 @@ class Clan():
         
         return False
 
-    def AttackPlanText(self, boss, mlist, attacked, nameflag):
+    def AttackPlanText(self, bossidx, mlist, attacked, nameflag):
         bossname = SpaceBossName()
-        text = '%s:%2d/%2d' % (bossname[boss], len(mlist), attacked + len(mlist))
+        text = '%s:%2d/%2d' % (bossname[bossidx], len(mlist), attacked + len(mlist))
         if nameflag:
             return text + ' ' + self.AttackPlanTextName(mlist)
         else:
-            if 0 < self.bossAttackAverage[boss]:
-                return text + '  +' + '%.1f周' % (len(mlist) /  self.bossAttackAverage[boss])
+            if 0 < self.bossAttackAverage[bossidx]:
+                nowbosscount = self.bosscount[bossidx] * BOSSNUMBER + bossidx
+                nowsortie = sum([h.sortiecount for h in self.AllHistory() if h.boss == nowbosscount])
+
+                advancelap = len(mlist) / self.bossAttackAverage[bossidx]
+                arrivallap = self.bosscount[bossidx] + 1 + (len(mlist) + nowsortie) / self.bossAttackAverage[bossidx]
+                return text + '  +%.1f周 (着地 %.1f周)' % (advancelap, arrivallap)
             else:
                 return text
 
@@ -1951,7 +1953,7 @@ class Clan():
 
     def CreateDefeatTimeMinutesList(self) -> List:
         result = []
-        maxvalue = 24 * 60 * 100
+        maxvalue = DAY_MINUTES * 100
 
         minstr = min([m for m in self.defeatTime if m is not None and 0 < len(m)])
         mindate = datetime.datetime.strptime(minstr, "%Y/%m/%d %H:%M:%S")
@@ -1971,7 +1973,9 @@ class Clan():
 
         return result
     
-    def CreateDefeatGraph(self, days : int) -> BytesIO:
+    def CreateDefeatGraph(self, limit : int) -> BytesIO:
+        days = int(math.ceil(limit / DAY_MINUTES))
+
         day_width = 30          # 日付部分の横幅
 
         hour_height = 12         # 時刻部分の縦幅
@@ -2000,7 +2004,7 @@ class Clan():
         def ConvWidth(minute):
             return min(minute * widthperhour // 60, 60 * 24)
 
-        maxminute = 24 * 60 * 100
+        maxminute = DAY_MINUTES * 100
         bosslist.extend([maxminute] * BOSSNUMBER * 2)
         laplist.extend([maxminute] * 2)
 
@@ -2034,7 +2038,7 @@ class Clan():
             gx = border + day_width
             gy = border + hour_height + day_height * d
 
-            daygap = 24 * 60 * d
+            daygap = DAY_MINUTES * d
             for b in range(BOSSNUMBER):
                 bx = gx
                 by = gy + lap_height + (boss_height +  boss_gap) * b
@@ -2045,8 +2049,8 @@ class Clan():
                     lapmin = laplist[lap] - daygap
                     if lapmin < 0:
                         continue
-                    if 24 * 60 < lapmin:
-                        lapmin = 24 * 60
+                    if DAY_MINUTES < lapmin:
+                        lapmin = min(limit - daygap, DAY_MINUTES)
                         endflag = True
 
                     defeatmin = bosslist[BOSSNUMBER * lap + b] - daygap
@@ -2073,7 +2077,7 @@ class Clan():
                 lapmin = laplist[lap] - daygap
                 if lapmin < 0:
                     continue
-                if 24 * 60 <= lapmin:
+                if DAY_MINUTES <= lapmin:
                     break
                 draw.line((gx + ConvWidth(lapmin), gy + 1, gx + ConvWidth(lapmin), gy + day_height - 1), fill = lapcolor)
                 draw.text((gx + ConvWidth(lapmin), gy), '%d' % (lap + 2), fill = fontcolor, font = font)
@@ -2084,10 +2088,14 @@ class Clan():
         return output
 
     async def DefeatGraph(self, message, member : ClanMember, opt):
-        day = min(cbday + 1, CLANBATTLETERM)
+        start = datetime.datetime.strptime(BATTLESTART + " 05:00", '%m/%d %H:%M')
+        nowtime = datetime.datetime.now()
+        now = datetime.datetime.strptime(nowtime.strftime('%m/%d %H:%M'), '%m/%d %H:%M')
 
-        if 0 < day:
-            output = self.CreateDefeatGraph(day)
+        limit = min((now - start).total_seconds() // 60, (CLANBATTLETERM * 24 - 5) * 60)
+
+        if 0 < limit:
+            output = self.CreateDefeatGraph(limit)
 
             with BytesIO(output.getbuffer()) as bs:
                 await message.channel.send(file=discord.File(bs, 'defeatgraph.png'))
@@ -2636,6 +2644,11 @@ class Clan():
             pass
 
         return result
+
+    def AllHistory(self):
+        yield from self.bosshistory
+        for m in self.members.values():
+            yield from m.history
 
     def SetOutputChannel(self):
         if self.outputchannel is None:

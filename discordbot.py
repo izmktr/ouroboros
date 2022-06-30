@@ -113,8 +113,15 @@ def SpaceBossName():
 
     return [name + '　' * (maxlen - len(name)) for name in BossName]
 
+def BlendColor(color1, color2):
+    return ((color1[0] + color2[0]) // 2, (color1[1] + color2[1]) // 2, (color1[2] + color2[2]) // 2)
+
 def ScriptText(str):
     return '```\n' + str + '\n```'
+
+
+class MemberError(BaseException):
+    pass
 
 class GlobalStrage:
     @staticmethod
@@ -248,6 +255,7 @@ class AttackHistory():
         self.defeat = defeat                #敵を討伐したか
         self.sortiecount = sortiecount      #便宜上凸数(討伐or持ち越し凸なら0.5)
         self.updatetime = ''                #最終更新時間
+        self.TimeStamping()
 
     def TimeStamping(self):
         self.updatetime = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
@@ -839,6 +847,9 @@ class Clan():
 
         self.commandlist = self.FuncMap()
 
+        self.mastercommand = False                              # マスターコマンド実行中
+
+
     def Save(self, clanid : int):
         dic = {
             'members': {},
@@ -929,7 +940,7 @@ class Clan():
             (['defeatlog'], self.DefeatLog),
 #            (['attacklog'], self.AttackLog),
             (['defeatgraph'], self.DefeatGraph),
-#            (['attackgraph'], self.AttackGraph),
+            (['attackgraph'], self.AttackGraph),
             (['score'], self.Score),
             (['settingreload'], self.SettingReload),
             (['memberdelete'], self.MemberDelete),
@@ -967,6 +978,9 @@ class Clan():
                         break
 
     def GetMember(self, author) -> ClanMember:
+        if self.mastercommand:
+            raise MemberError
+
         member = self.members.get(author.id)
         if member is None:
             member = ClanMember(author.id)
@@ -1314,6 +1328,8 @@ class Clan():
         return react
 
     async def Attack(self, message, member : ClanMember, opt):
+        if member is None:
+            member = self.GetMember(message.author)
         try:
             num = int(opt)
             bidx = num - 1 if num < 10 else num // 10 - 1
@@ -1359,6 +1375,9 @@ class Clan():
 
 
     async def ContinuesAttack(self, message, member : ClanMember, opt):
+        if member is None:
+            member = self.GetMember(message.author)
+
         if opt == '':
             overlist = [(idx + 1, time) for idx, time in enumerate(member.attacktime) if time is not None and 0 < time]
 
@@ -1403,6 +1422,9 @@ class Clan():
         return True
 
     async def Cancel(self, message, member : ClanMember, opt):
+        if member is None:
+            member = self.GetMember(message.author)
+
         if member.IsAttack():
             member.Cancel()
             self.TemporaryMessage(message.channel, '前のアタックをキャンセルしました')
@@ -1410,6 +1432,9 @@ class Clan():
         return True
 
     async def TaskKill(self, message, member : ClanMember, opt):
+        if member is None:
+            member = self.GetMember(message.author)
+
         member.taskkill = message.id
         await message.add_reaction(self.taskkillmark)
         return True
@@ -1496,6 +1521,9 @@ class Clan():
             return '%d周 %dboss' % (boss // BOSSNUMBER + 1, boss % BOSSNUMBER + 1)
 
     async def Reserve(self, message, member : ClanMember, opt : str):
+        if member is None:
+            member = self.GetMember(message.author)
+
         strarray = opt.split(' ')
 
         route = self.RouteAnalyze(strarray[0])
@@ -1516,6 +1544,9 @@ class Clan():
         return True
 
     async def Unreserve(self, message, member : ClanMember, opt : str):
+        if member is None:
+            member = self.GetMember(message.author)
+
         if opt == 'all':
             self.RemoveReserve(lambda m: m.member == member)
             self.TemporaryMessage(message.channel, '予約をすべて消しました')
@@ -1622,6 +1653,8 @@ class Clan():
         return react
 
     async def Recruit(self, message, member : ClanMember, opt : str):
+        if member is None:
+            member = self.GetMember(message.author)
         if opt == '':
             self.TemporaryMessage(message.channel, 'all またはボスの番号を入れてください')
             return False
@@ -1682,7 +1715,9 @@ class Clan():
                 bossunknownmember.extend([m] * -unknowncount)
 
         # 結果組み立て        
-        bosslist = [self.AttackPlanText(i, mlist, attackedcount[i], nameflag) for i, mlist in enumerate(bossmember)]
+        ttime = datetime.datetime.now() + datetime.timedelta(hours = -1)
+
+        bosslist = [self.AttackPlanText(i, mlist, attackedcount[i], ttime, nameflag) for i, mlist in enumerate(bossmember)]
         result = '\n'.join(bosslist)
         if 0 < len(bossunknownmember):
             result += '\n不明:%2d' % len(bossunknownmember)
@@ -1691,9 +1726,11 @@ class Clan():
         
         return False
 
-    def AttackPlanText(self, bossidx, mlist, attacked, nameflag):
+    def AttackPlanText(self, bossidx, mlist, attacked, ttime, nameflag):
         bossname = SpaceBossName()
-        text = '%s:%2d/%2d' % (bossname[bossidx], len(mlist), attacked + len(mlist))
+        active = [m for m in mlist if ttime < m.lastactive]
+
+        text = '%s:%2d(%2d)/%2d' % (bossname[bossidx], len(mlist), active, attacked + len(mlist))
         if nameflag:
             return text + ' ' + self.AttackPlanTextName(mlist)
         else:
@@ -1725,6 +1762,9 @@ class Clan():
         return False
 
     async def Plan(self, message, member : ClanMember, opt : str):
+        if member is None:
+            member = self.GetMember(message.author)
+
         bossplan : List[int] = []
         for n in opt:
             try:
@@ -1827,6 +1867,8 @@ class Clan():
 
 
     async def SetAttack(self, message, member : ClanMember, opt : str):
+        if member is None:
+            member = self.GetMember(message.author)
 
         atmark = opt
 
@@ -1888,7 +1930,7 @@ class Clan():
                 self.dicehistory.append(rndstar)
                 break
 
-        await message.channel.send('%s %s %d' % (member.name, chr(int(0x1F3B2)), rndstar))
+        await message.channel.send('%s %s %d' % (message.author.display_name, chr(int(0x1F3B2)), rndstar))
 
         return True
 
@@ -1904,7 +1946,10 @@ class Clan():
 
     async def History(self, message, member : ClanMember, opt):
         if opt == '':
-            await message.channel.send(member.History())
+            if member is not None:
+                await message.channel.send(member.History())
+            else:
+                self.TemporaryMessage(message.channel, 'メンバーがいません')
         else:
             fmember = self.FindMember(opt)
             if fmember is not None:
@@ -1914,6 +1959,9 @@ class Clan():
         return False
 
     async def OverTime(self, message, member : ClanMember, opt):
+        if member is None:
+            member = self.GetMember(message.author)
+
         try:
             time = int(opt)
             if time < 0 or 90 < time:
@@ -2104,7 +2152,156 @@ class Clan():
 
         return False
 
+    def CreateAttackTimeMinutesList(self):
+        result = []
+        now = datetime.datetime.now()
+        mindate = datetime.datetime.strptime(BATTLESTART, "%m/%d")
+        basedate = datetime.datetime(year=now.year, month=mindate.month, day=mindate.day, hour=5)
+
+        for d in self.AllHistory():
+            if len(d.updatetime) == 0:
+                continue
+            date = datetime.datetime.strptime(d.updatetime, "%Y/%m/%d %H:%M:%S")
+            minute = int((date - basedate).total_seconds()) // 60
+            result.append([d.sortiecount, minute])
+        
+        result.sort(key = lambda h: h[1])
+
+        print(json.dumps(result))
+
+        return result
+
+    def CreateAttackGraph(self, limit : int) -> BytesIO:
+        days = int(math.ceil(limit / DAY_MINUTES))
+
+        sortie_width = 30    # 凸数の横幅
+
+        hour_height = 16         # 時刻部分の縦幅
+        widthperhour = 30    # 1時間の幅
+
+        graph_height = 90 * 3   # グラフの高さ
+
+        fontsize = 12       # フォントの大きさ
+
+        border = 4          # 周りの枠
+        graph_border = 6    # グラフ周りの枠
+
+        day_height = 16     # 日付部分の高さ
+        day_width = 60      # 日付部分の幅
+
+        max_sortie = 90
+
+        backcolor = (240, 240, 240)     #背景色
+        linecolor = (255, 255, 255)
+        fontcolor = (0, 0, 0)
+        daypointcolor = [(100, 149, 237), (127, 255, 212), (34, 139, 34), (255, 215, 0), (255, 69, 0)]
+
+        attacklist = self.CreateAttackTimeMinutesList()
+
+        width = sortie_width + widthperhour * 24 + border * 2
+        height = hour_height + day_height + graph_height +  border * 2 + graph_border * 2
+        im = Image.new("RGB", (width, height), backcolor)
+        draw = ImageDraw.Draw(im)
+        font = ImageFont.truetype('arial.ttf', fontsize)
+
+        # 日付部分作成
+        startdate = datetime.datetime.strptime(BATTLESTART, "%m/%d")
+
+        for d in range(CLANBATTLETERM):
+            targetdate = startdate + datetime.timedelta(days=d)
+            datestr = '%2d/%2d' % (targetdate.month, targetdate.day)
+
+            dx = border + day_width * d
+            dy = border
+            draw.rectangle((dx, dy, dx + day_width, dy + day_height), fill =  daypointcolor[d])
+            draw.text((dx + (day_width - fontsize * 2) // 2, dy + (day_height - fontsize) // 2), datestr, fill = fontcolor, font = font)
+
+        # ライン作成
+        hour_y = (hour_height - fontsize) // 2
+        ly = border + day_height + hour_y
+        for i in range(25):
+            lx = sortie_width + i * widthperhour + border
+            draw.line((lx, day_height + hour_height + border, lx, height - hour_height + border), fill = linecolor)
+            if i < 24:
+                draw.text((lx, ly), '%d' % ((i + 5) % 24), fill = fontcolor, font = font)
+
+        for i in range(10):
+            y = day_height + hour_height + border + graph_border + graph_height * i // 9
+            draw.line((border + sortie_width, y, width - border, y), fill = linecolor)
+            draw.text((border + sortie_width - fontsize * 2, y - fontsize), '%2d' % ((9 - i) * 10), fill = fontcolor, font = font)
+
+        #グラフ部分作成
+        gx = border + sortie_width
+        gy = border + day_height + graph_border + hour_height
+        sortie = 0
+        beforeday = 0
+        daygap = 0
+        bx = gx
+        by = gy + graph_height
+
+        graphlinecolor = BlendColor(backcolor, daypointcolor[0])
+        for min in attacklist:
+            d = min[1] // DAY_MINUTES
+            if CLANBATTLETERM <= d:
+                break
+            if beforeday != d:
+                draw.line((bx, by, gx + widthperhour * 24, by), fill =  graphlinecolor)
+
+                graphlinecolor = BlendColor(backcolor,daypointcolor[d])
+                beforeday = d
+                sortie = 0
+                daygap = d * DAY_MINUTES
+                bx = gx
+                by = gy + graph_height
+
+            sortie += min[0]
+            if max_sortie <= sortie:
+                sortie = max_sortie
+            px = gx + ((min[1] - daygap) * widthperhour // 60)
+            py = gy + int((max_sortie - sortie) * graph_height / max_sortie)
+
+            draw.line((bx, by, px, py), fill =  graphlinecolor)
+            bx = px
+            by = py
+
+        sortie = 0
+        beforeday = 0
+        daygap = 0
+        for min in attacklist:
+            d = min[1] // DAY_MINUTES
+            if CLANBATTLETERM <= d:
+                break
+            if beforeday != d:
+                beforeday = d
+                sortie = 0
+                daygap = d * DAY_MINUTES
+            sortie += min[0]
+            if max_sortie <= sortie:
+                sortie = max_sortie
+            px = gx + ((min[1] - daygap) * widthperhour // 60)
+            py = gy + int((max_sortie - sortie) * graph_height / max_sortie)
+            draw.rectangle((px - 1, py - 1, px + 1, py + 1), fill =  daypointcolor[d])
+
+
+        output = BytesIO()
+        im.save(output, format = 'PNG')
+
+        return output
+
     async def AttackGraph(self, message, member : ClanMember, opt):
+        start = datetime.datetime.strptime(BATTLESTART + " 05:00", '%m/%d %H:%M')
+        nowtime = datetime.datetime.now()
+        now = datetime.datetime.strptime(nowtime.strftime('%m/%d %H:%M'), '%m/%d %H:%M')
+
+        limit = min((now - start).total_seconds() // 60, (CLANBATTLETERM * 24 - 5) * 60)
+
+        if 0 < limit:
+            output = self.CreateAttackGraph(limit)
+
+            with BytesIO(output.getbuffer()) as bs:
+                await message.channel.send(file=discord.File(bs, 'attackgraph.png'))
+        else:
+            self.TemporaryMessage(message.channel, 'データがありません')
 
         return False
 
@@ -2140,6 +2337,8 @@ class Clan():
             return False
 
     async def MemberReset(self, message, member : ClanMember, opt):
+        if member is None:
+            member = self.GetMember(message.author)
         member.Reset()
         return True
 
@@ -2431,6 +2630,13 @@ class Clan():
         if not self.admin: return False
         if not message.author.guild_permissions.administrator: return False
 
+        try:
+            pass
+        except MemberError:
+            pass
+        finally:
+            pass
+
         return False
 
     async def DamageChannel(self, message, member : ClanMember, opt):
@@ -2500,6 +2706,9 @@ class Clan():
         return False
 
     async def Damage(self, message, member : ClanMember, opt):
+        if member is None:
+            member = self.GetMember(message.author)
+
         if message.channel.type == discord.ChannelType.private:
             self.TemporaryMessage(message.channel, 'このチャンネルでは使えません')
             return False
@@ -3171,7 +3380,7 @@ async def loop():
 @client.event
 async def on_ready():
     # 起動したらターミナルにログイン通知が表示される
-    print('ログインしました')
+    print('ログインしました ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
     Outlog(ERRFILE, "login.")
 
     global clanhash

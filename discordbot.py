@@ -2167,8 +2167,6 @@ class Clan():
         
         result.sort(key = lambda h: h[1])
 
-        print(json.dumps(result))
-
         return result
 
     def CreateAttackGraph(self, limit : int) -> BytesIO:

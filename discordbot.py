@@ -2320,7 +2320,6 @@ class Clan():
         for line in lines:
             offset = 0
             while True:
-                print(offset, line[offset:])
                 m = re.search('(\d+)([:：])(\d+)', line[offset:])
                 if m is None:
                     result += line[offset:]

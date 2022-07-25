@@ -941,6 +941,7 @@ class Clan():
 #            (['attacklog'], self.AttackLog),
             (['defeatgraph'], self.DefeatGraph),
             (['attackgraph'], self.AttackGraph),
+            (['tl'], self.TimelineConvert),
             (['score'], self.Score),
             (['settingreload'], self.SettingReload),
             (['memberdelete'], self.MemberDelete),
@@ -2300,6 +2301,39 @@ class Clan():
                 await message.channel.send(file=discord.File(bs, 'attackgraph.png'))
         else:
             self.TemporaryMessage(message.channel, 'データがありません')
+
+        return False
+
+    async def TimelineConvert(self, message, member : ClanMember, opt):
+        lines = opt.splitlines(True)
+
+        tm = re.match('[\d]+', lines[0])
+        if tm is None:
+            self.TemporaryMessage(message.channel, '持ち越し時間を入力してください')
+            return False
+
+        overtime = int(tm.group())
+        result = '持ち越し時間:%d秒\n' % overtime
+
+        lines = lines[1:]
+
+        for line in lines:
+            offset = 0
+            while True:
+                print(offset, line[offset:])
+                m = re.search('(\d+)([:：])(\d+)', line[offset:])
+                if m is None:
+                    result += line[offset:]
+                    break
+
+                x = max(int(m.group(1)) * 60 + int(m.group(3)) - (90 - overtime), 0)
+                if 0 < offset or 0 < x:
+                    result += line[offset:offset + m.start()] + '%d:%02d' % (x // 60, x % 60)
+                    offset += m.end()
+                else:
+                    break
+        
+        await message.channel.send('```' + result + '```')
 
         return False
 

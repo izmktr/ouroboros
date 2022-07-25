@@ -1695,6 +1695,8 @@ class Clan():
 
             # 3凸済み
             if MAX_SORITE <= len(attackedplan):
+                for p in attackedplan:
+                    attackedcount[p] += 1
                 continue
 
             remainplan = m.plan.copy()

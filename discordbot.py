@@ -1024,6 +1024,9 @@ class Clan():
         self.bosscount = [0] * BOSSNUMBER
         self.defeatTime.clear()
         self.bosshistory.clear()
+        
+        for member in self.members.values():
+            member.plan.clear()
 
     def Reset(self):
         self.lastmessage = None

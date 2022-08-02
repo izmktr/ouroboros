@@ -1736,7 +1736,7 @@ class Clan():
         bossname = SpaceBossName()
         active = [m for m in mlist if ttime < m.lastactive]
 
-        text = '%s:%2d(%2d)/%2d' % (bossname[bossidx], len(mlist), active, attacked + len(mlist))
+        text = '%s:%2d(%2d)/%2d' % (bossname[bossidx], len(mlist), len(active), attacked + len(mlist))
         if nameflag:
             return text + ' ' + self.AttackPlanTextName(mlist)
         else:

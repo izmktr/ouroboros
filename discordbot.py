@@ -302,7 +302,6 @@ class ClanMember():
         self.sortie = sortie
         self.reportlimit = datetime.datetime.now() + datetime.timedelta(minutes = 30)
         self.boss = bossindex
-        self.History
 
     def IsAttack(self):
         return self.sortie != -1

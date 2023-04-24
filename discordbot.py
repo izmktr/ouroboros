@@ -4,13 +4,7 @@
 inputchannel = '凸報告'
 outputchannel = '状況報告'
 
-BossName = [
-    'ゴブリングレート',
-    'ライライ',
-    'シードレイク',
-    'スピリットホーン',
-    'カルキノス',
-]
+BossName = ['boss%d' % (n + 1) for n in range(5)]
 
 #最大攻撃数
 MAX_SORITE = 3
@@ -20,13 +14,12 @@ BATTLEEND = '06/29'
 CLANBATTLETERM = 5
 DAY_MINUTES = 24 * 60
 
-LevelUpLap = [4, 11, 31, 39]
+LevelUpLap = [4, 10, 26]
 BossHpData = [
     [   [600, 1.2], [800, 1.2], [1000, 1.3], [1200, 1.4], [1500, 1.5]   ],
-    [   [600, 1.6], [800, 1.6], [1000, 1.8], [1200, 1.9], [1500, 2.0],  ],
-    [   [1200, 2.0], [1400, 2.0], [1700, 2.4], [1900, 2.4], [2200, 2.6],  ],
-    [   [1900, 3.5], [2000, 3.5], [2300, 3.7], [2500, 3.8], [2700, 4.0], ],
-    [   [8500, 3.5], [9000, 3.5], [9500, 3.7], [10000, 3.8], [11000, 4.0], ],
+    [   [800, 1.6], [1000, 1.6], [1300, 1.8], [1500, 1.9], [2000, 2.0],  ],
+    [   [2000, 2.0], [2200, 2.0], [2500, 2.1], [2800, 2.1], [3000, 2.2],  ],
+    [   [20000, 4.5], [21000, 4.5], [23000, 4.7], [24000, 4.8], [25000, 5.0], ],
 ]
 
 GachaLotData = [
@@ -405,27 +398,6 @@ class ClanMember():
         self.taskkill = 0
         self.history.clear()
         self.attacktime = [None] * MAX_SORITE
-
-    def History(self):
-        msg = ''
-        for h in self.history:
-            if 0 <= h.boss:
-                msg += '%d凸目 %d周:%s' % (h.sortie + 1,
-                h.boss // BOSSNUMBER + 1, 
-                BossName[h.boss % BOSSNUMBER])
-            else:
-                msg += '%d凸目 ボス不明 :' % (h.sortie + 1)
-
-            if h.defeat:
-                msg += ' %d秒 討伐' % (h.overtime)
-
-            msg += '\n'
-
-        if 0 < len(self.plan):
-            msg += '凸予定: ' + ' '.join(['%d' % (boss + 1) for boss in self.plan]) + '\n'
-
-        if msg == '' : msg = '履歴がありません'
-        return msg
 
     selializemember = [
         'name', 
@@ -936,6 +908,7 @@ class Clan():
 #            (['role'], self.Role),
             (['reset'], self.MemberReset),
             (['history'], self.History),
+            (['fullhistory'], self.FullHistory),
 #            (['overtime', '持ち越し時間'], self.OverTime),
             (['defeatlog'], self.DefeatLog),
 #            (['attacklog'], self.AttackLog),
@@ -1227,6 +1200,33 @@ class Clan():
         if 0 < avg and avg <= 0.5:
             return True
         return False
+
+    def HistoryText(self, history : List[AttackHistory], dayflag = False):
+        msg = ''
+        for h in history:
+            if dayflag:
+                msg += '%d日 ' % (h.day + 1)
+
+            if 0 <= h.boss:
+                msg += '%d凸目 %d周:%s' % (h.sortie + 1,
+                h.boss // BOSSNUMBER + 1, 
+                BossName[h.boss % BOSSNUMBER])
+            else:
+                msg += '%d凸目 ボス不明 :' % (h.sortie + 1)
+
+            if h.defeat:
+                msg += ' %d秒 討伐' % (h.overtime)
+
+            msg += '\n'
+
+        if 0 < len(self.plan):
+            msg += '凸予定: ' + ' '.join(['%d' % (boss + 1) for boss in self.plan]) + '\n'
+
+        if msg == '' : msg = '履歴がありません'
+        return msg
+
+    def MemberHistory(self, member : ClanMember):
+        return [m for m in self.bosshistory if m.member == member.id]
 
     def CreateAttackReaction(self, atmember : ClanMember, message, boss : int, sortie : int, overtime : int):
         react = MessageReaction(atmember)
@@ -1950,16 +1950,18 @@ class Clan():
         member.Reset()
         return True
 
-    async def History(self, message, member : ClanMember, opt):
+    async def FullHistory(self, message, member : ClanMember, opt):
         if opt == '':
             if member is not None:
-                await message.channel.send(member.History())
+                history = self.MemberHistory(member)
+                await message.channel.send(self.HistoryText(history, True))
             else:
                 self.TemporaryMessage(message.channel, 'メンバーがいません')
         else:
             fmember = self.FindMember(opt)
             if fmember is not None:
-                await message.channel.send(fmember.History())
+                history = self.MemberHistory(fmember)
+                await message.channel.send(self.HistoryText(history, True))
             else:
                 self.TemporaryMessage(message.channel, 'メンバーがいません')
         return False

@@ -131,6 +131,9 @@ class GlobalStrage:
         global BATTLEEND
         global BossHpData
 
+        #設定ファイルがないときはリターン
+        if not os.path.exists(SETTINGFILE): return
+
         with open(SETTINGFILE) as a:
             mdic =  json.load(a)
 
@@ -3431,6 +3434,13 @@ async def on_ready():
 
             else: 
                 print('[%d] not found' % guildid)
+    
+    # ループ処理実行（イベントループが開始された後に実行）
+    try:
+        loop.start()
+    except RuntimeError as e:
+        if "already running" not in str(e):
+            raise
         
 
 async def VolatilityMessage(channel, mes, time):
@@ -3552,9 +3562,6 @@ for file in files:
         clanhash[clanid] = clan
 
 GlobalStrage.Load()
-
-#ループ処理実行
-loop.start()
 
 # Botの起動とDiscordサーバーへの接続
 client.run(tokenkeycode.TOKEN)

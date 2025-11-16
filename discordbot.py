@@ -909,7 +909,7 @@ class Clan():
             (['damagechannel'], self.DamageChannel),
 #            (['role'], self.Role),
             (['reset'], self.MemberReset),
-            (['history'], self.History),
+            (['history'], self.HistoryText),
             (['fullhistory'], self.FullHistory),
 #            (['overtime', '持ち越し時間'], self.OverTime),
             (['defeatlog'], self.DefeatLog),

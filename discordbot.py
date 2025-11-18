@@ -85,6 +85,7 @@ cbday = 0
 intents = discord.Intents.default()  # デフォルトのIntentsオブジェクトを生成
 intents.typing = False  # typingを受け取らないように
 intents.members = True  # membersを受け取る
+intents.message_content = True  # メッセージ内容を取得するために必要
 client = discord.Client(intents=intents)
 
 clanhash: Dict[int, 'Clan'] = {}

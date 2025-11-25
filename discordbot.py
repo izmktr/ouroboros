@@ -244,7 +244,7 @@ class AttackHistory():
         'updatetime'
     ]
 
-    def __init__(self, member : "ClanMember" | None, messageid, sortie, boss, overtime, defeat, sortiecount):
+    def __init__(self, member : "ClanMember", messageid, sortie, boss, overtime, defeat, sortiecount):
         self.member = member.id if member is not None else 0 #プレイヤー
         self.day = cbday                    #何日目か
         self.sortie : int = sortie                #何凸目か
@@ -912,7 +912,7 @@ class Clan():
             (['damagechannel'], self.DamageChannel),
 #            (['role'], self.Role),
             (['reset'], self.MemberReset),
-            (['history'], self.HistoryText),
+            (['history'], self.History),
             (['fullhistory'], self.FullHistory),
 #            (['overtime', '持ち越し時間'], self.OverTime),
             (['defeatlog'], self.DefeatLog),
@@ -1062,6 +1062,7 @@ class Clan():
         for emoji in reactemojis:
             try:
                 await message.add_reaction(emoji)
+                await asyncio.sleep(0.1)
             except (discord.errors.NotFound, discord.errors.Forbidden):
                 break
 
@@ -1954,6 +1955,22 @@ class Clan():
     async def CmdReset(self, message, member : ClanMember, opt):
         member.Reset()
         return True
+
+    async def History(self, message, member : ClanMember, opt):
+        if opt == '':
+            if member is not None:
+                history = self.MemberHistory(member)
+                await message.channel.send(self.HistoryText(history))
+            else:
+                self.TemporaryMessage(message.channel, 'メンバーがいません')
+        else:
+            fmember = self.FindMember(opt)
+            if fmember is not None:
+                history = self.MemberHistory(fmember)
+                await message.channel.send(self.HistoryText(history))
+            else:
+                self.TemporaryMessage(message.channel, 'メンバーがいません')
+        return False
 
     async def FullHistory(self, message, member : ClanMember, opt):
         if opt == '':

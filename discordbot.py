@@ -4,25 +4,25 @@
 inputchannel = '凸報告'
 outputchannel = '状況報告'
 
-BossName = ['boss%d' % (n + 1) for n in range(5)]
+BossName : List[str] = ['boss%d' % (n + 1) for n in range(5)]
 
 #最大攻撃数
-MAX_SORITE = 3
+MAX_SORITE : int = 3
 
-BATTLESTART = '06/25'
-BATTLEEND = '06/29'
-CLANBATTLETERM = 5
-DAY_MINUTES = 24 * 60
+BATTLESTART : str = '06/25'
+BATTLEEND : str = '06/29'
+CLANBATTLETERM : int = 5
+DAY_MINUTES : int = 24 * 60
 
-LevelUpLap = [4, 10, 26]
-BossHpData = [
+LevelUpLap : List[int] = [0, 7, 23]
+BossHpData: List[List[List[float]]] = [
     [   [600, 1.2], [800, 1.2], [1000, 1.3], [1200, 1.4], [1500, 1.5]   ],
     [   [800, 1.6], [1000, 1.6], [1300, 1.8], [1500, 1.9], [2000, 2.0],  ],
     [   [2000, 2.0], [2200, 2.0], [2500, 2.1], [2800, 2.1], [3000, 2.2],  ],
     [   [20000, 4.5], [21000, 4.5], [23000, 4.7], [24000, 4.8], [25000, 5.0], ],
 ]
 
-GachaLotData = [
+GachaLotData: List[List[float]] = [
     [0.7, 0.0, 1.8, 18, 100], # 通常
     [0.7, 0.0, 1.8, 18, 100], # 限定
     [0.7, 0.0, 1.8, 18, 100], # プライズ
@@ -30,10 +30,10 @@ GachaLotData = [
     [0.7, 0.9, 3.4, 18, 100], # プリフェス
 ]
 
-ERRFILE = 'error.log'
-SETTINGFILE = 'setting.json'
+ERRFILE : str = 'error.log'
+SETTINGFILE : str = 'setting.json'
 
-BossLapScore = []
+BossLapScore: List[float] = []
 for l in BossHpData:
     lapscore = 0
     for _i in l:
@@ -102,15 +102,15 @@ def renewalCbday():
     now = datetime.datetime.strptime(nowtime.strftime('%m/%d %H:%M'), '%m/%d %H:%M')
     cbday = (now - start).days
 
-def SpaceBossName():
+def SpaceBossName() -> List[str]:
     maxlen = max([len(name) for name in BossName])
 
     return [name + '　' * (maxlen - len(name)) for name in BossName]
 
-def BlendColor(color1, color2):
+def BlendColor(color1 : Tuple[int, int, int], color2 : Tuple[int, int, int]) -> Tuple[int, int, int]:
     return ((color1[0] + color2[0]) // 2, (color1[1] + color2[1]) // 2, (color1[2] + color2[2]) // 2)
 
-def ScriptText(str):
+def ScriptText(str : str) -> str:
     return '```\n' + str + '\n```'
 
 
@@ -153,7 +153,7 @@ class GlobalStrage:
 
     @staticmethod
     def Save():
-        dic = {
+        dic : Dict[str, Any]= {
             'BossName' : BossName,
             'BATTLESTART' : BATTLESTART,
             'BATTLEEND' : BATTLEEND,
@@ -186,8 +186,8 @@ class ClanScore:
             total += upperlap * BossLapScore[level]
             level += 1
         
-        lap = (score - total) // BossLapScore[level] + (LevelUpLap[level - 1] if 0 < level else 1)
-        modscore = (score - total) % BossLapScore[level]
+        lap : int = (score - total) // BossLapScore[level] + (LevelUpLap[level - 1] if 0 < level else 1)
+        modscore : int = (score - total) % BossLapScore[level]
 
         totalscore = 0
         bindex = 0
@@ -242,31 +242,31 @@ class AttackHistory():
         'updatetime'
     ]
 
-    def __init__(self, member : "ClanMember", messageid, sortie, boss, overtime, defeat, sortiecount):
+    def __init__(self, member : "ClanMember" | None, messageid, sortie, boss, overtime, defeat, sortiecount):
         self.member = member.id if member is not None else 0 #プレイヤー
         self.day = cbday                    #何日目か
-        self.sortie = sortie                #何凸目か
-        self.messageid = messageid          #凸に使ったメッセージID
-        self.boss = boss                    #凸したボス
-        self.overtime = overtime            #持ち越し秒数
-        self.defeat = defeat                #敵を討伐したか
-        self.sortiecount = sortiecount      #便宜上凸数(討伐or持ち越し凸なら0.5)
-        self.updatetime = ''                #最終更新時間
+        self.sortie : int = sortie                #何凸目か
+        self.messageid : str = messageid          #凸に使ったメッセージID
+        self.boss : int = boss                    #凸したボス
+        self.overtime : int = overtime            #持ち越し秒数
+        self.defeat : bool = defeat                #敵を討伐したか
+        self.sortiecount : float = sortiecount      #便宜上凸数(討伐or持ち越し凸なら0.5)
+        self.updatetime : str = ''                #最終更新時間
         self.TimeStamping()
 
     def TimeStamping(self):
         self.updatetime = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
 
     @staticmethod
-    def Desrialize(dic):
+    def Desrialize(dic : Dict[str, Any]) -> 'AttackHistory':
         history = AttackHistory(None, 0, 0, -1, 0, False, 0)
         for key in AttackHistory.keyarray:
             if key in dic:
                 history.__dict__[key] = dic[key]
         return history
 
-    def Serialize(self):
-        dic = {}
+    def Serialize(self) -> Dict[str, Any]:
+        dic : Dict[str, Any] = {}
         for key in AttackHistory.keyarray:
             dic[key] = self.__dict__[key]
         return dic
@@ -310,10 +310,10 @@ class ClanMember():
     def IsAttack(self):
         return self.sortie != -1
 
-    def IsOverkill(self):
+    def IsOverkill(self) -> bool:
         if not self.IsAttack(): return False
         time = self.attacktime[self.sortie]
-        return time is not None and 0 < self.attacktime[self.sortie]
+        return time is not None and 0 < time
 
     #未凸数
     def FirstSoriteNum(self):
@@ -331,7 +331,7 @@ class ClanMember():
         return count
 
     def DecoName(self, opt : str) -> str:
-        s = ''
+        s : str = ''
         for c in opt:
             if c == 'n': 
                 s += self.name

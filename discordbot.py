@@ -1,6 +1,31 @@
 # tokenkeycode.py というファイル名で以下の行を保存する 
 # TOKEN = 'xxxxxxxxxxxxxxxxxxxxxxxx.yyyyyy.zzzzzzzzzzzzzzzzzzzzzzzzzzz'
 
+import enum
+from math import floor
+import math
+from re import M, match, split
+from sre_constants import ATCODES, MARK
+from types import MemberDescriptorType
+import tokenkeycode
+
+import asyncio
+import discord
+from discord.ext import tasks
+import datetime 
+import calendar
+import json
+import glob
+import os
+import re
+import codecs
+import random
+from PIL import Image, ImageDraw, ImageFont
+from typing import List, Dict, Any, Optional, Tuple
+from io import BytesIO, StringIO
+from typing import Sequence, TypeVar, Callable
+from functools import cmp_to_key
+
 inputchannel = '凸報告'
 outputchannel = '状況報告'
 
@@ -41,30 +66,7 @@ for l in BossHpData:
         _i.append(_i[0] * _i[1])
     BossLapScore.append(lapscore)
 
-import enum
-from math import floor
-import math
-from re import M, match, split
-from sre_constants import ATCODES, MARK
-from types import MemberDescriptorType
-import tokenkeycode
 
-import asyncio
-import discord
-from discord.ext import tasks
-import datetime 
-import calendar
-import json
-import glob
-import os
-import re
-import codecs
-import random
-from PIL import Image, ImageDraw, ImageFont
-from typing import List, Dict, Any, Optional, Tuple
-from io import BytesIO, StringIO
-from typing import Sequence, TypeVar, Callable
-from functools import cmp_to_key
 
 T = TypeVar('T') 
 

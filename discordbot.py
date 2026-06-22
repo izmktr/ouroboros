@@ -829,6 +829,7 @@ class Clan():
 
     def Save(self, clanid : int):
         dic = {
+            'name' : self.guild.name if self.guild is not None else '',
             'members': {},
             'bosscount' : self.bosscount,
             'channelid' : self.channelid,
@@ -2669,7 +2670,7 @@ class Clan():
         # ギルドIDを取得
         guildid = message.guild.id if message.guild is not None else None
         if guildid is not None and guildid in clanhash:
-            siteurl = SITEURL + str(guildid)
+            siteurl = tokenkeycode.SITEURL + str(guildid)
             await message.channel.send(siteurl)
             return False
         return False

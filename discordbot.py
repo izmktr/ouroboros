@@ -5,7 +5,6 @@ import enum
 from math import floor
 import math
 from re import M, match, split
-from sre_constants import ATCODES, MARK
 from types import MemberDescriptorType
 import tokenkeycode
 

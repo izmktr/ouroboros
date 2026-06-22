@@ -1326,7 +1326,7 @@ class Clan():
 
         async def deletereaction(payload):
             atmember.Revert(payload.message_id)
-            if atmember.attackmessage.id == payload.message_id:
+            if atmember.attackmessage is not None and atmember.attackmessage.id == payload.message_id:
                 atmember.Cancel()
             return True
 

@@ -882,7 +882,7 @@ class Clan():
             clan.CalcBossAttackAverage()
             return clan
 
-    def FuncMap(self):
+    def FuncMap(self) -> List[Tuple[List[str], Callable[..., Awaitable[Optional[bool]]]]]:
         return [
             (['a', '凸', 'あ'], self.Attack),
             (['c', '持'], self.ContinuesAttack),
@@ -942,6 +942,7 @@ class Clan():
             (['inputerror'], self.InputError),
             (['forcecrossday'], self.ForceCrossDay),
             (['gcmd'], self.GuildCommand),
+            (['siteurl'], self.SiteUrl),
         ]
 
     def SetGuild(self, guild):
@@ -2662,6 +2663,15 @@ class Clan():
 
         await message.channel.send('\n'.join(['%d:%s' % (m[0], m[1].name) for m in guildlist]))
 
+        return False
+
+    async def SiteUrl(self, message, member : ClanMember, opt):
+        # ギルドIDを取得
+        guildid = message.guild.id if message.guild is not None else None
+        if guildid is not None and guildid in clanhash:
+            siteurl = SITEURL + str(guildid)
+            await message.channel.send(siteurl)
+            return False
         return False
 
     async def GuildCommand(self, message, member : ClanMember, opt):

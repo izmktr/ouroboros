@@ -244,7 +244,7 @@ class AttackHistory():
         'updatetime'
     ]
 
-    def __init__(self, member : "ClanMember", messageid, sortie, boss, overtime, defeat, sortiecount):
+    def __init__(self, member : Optional["ClanMember"], messageid, sortie, boss, overtime, defeat, sortiecount):
         self.member = member.id if member is not None else 0 #プレイヤー
         self.day = cbday                    #何日目か
         self.sortie : int = sortie                #何凸目か
@@ -715,7 +715,7 @@ class ReserveUnit:
         self.member = member
         self.SetComment(comment)
 
-    num3 = re.compile('[\d]{3,}')
+    num3 = re.compile(r'[\d]{3,}')
     def SetComment(self, comment):
         self.comment = comment
 
@@ -2148,7 +2148,7 @@ class Clan():
         nowtime = datetime.datetime.now()
         now = datetime.datetime.strptime(nowtime.strftime('%m/%d %H:%M'), '%m/%d %H:%M')
 
-        limit = min((now - start).total_seconds() // 60, (CLANBATTLETERM * 24 - 5) * 60)
+        limit = int(min((now - start).total_seconds() // 60, (CLANBATTLETERM * 24 - 5) * 60))
 
         if 0 < limit:
             output = self.CreateDefeatGraph(limit)
@@ -2314,7 +2314,7 @@ class Clan():
     async def TimelineConvert(self, message, member : ClanMember, opt):
         lines = opt.splitlines(True)
 
-        tm = re.match('[\d]+', lines[0])
+        tm = re.match(r'[\d]+', lines[0])
         if tm is None:
             self.TemporaryMessage(message.channel, '持ち越し時間を入力してください')
             return False
@@ -2327,7 +2327,7 @@ class Clan():
         for line in lines:
             offset = 0
             while True:
-                m = re.search('(\d+)([:：])(\d+)', line[offset:])
+                m = re.search(r'(\d+)([:：])(\d+)', line[offset:])
                 if m is None:
                     result += line[offset:]
                     break
@@ -2895,7 +2895,7 @@ class Clan():
             return None
 
         # 残りHP入力
-        m = re.match('([@＠])([\s　]*)(\d+)', message.content)
+        m = re.match(r'([@＠])([\s　]*)(\d+)', message.content)
         if m:
             if len(dclist) == 1:
                 dc = dclist[0]
@@ -2918,21 +2918,21 @@ class Clan():
             if dc.channel.id != message.channel.id:
                 return None
 
-            m = re.match('(\d+[sS秒ｓＳ])([\s　]*)(\d+)([^\d]*.*)', message.content)
+            m = re.match(r'(\d+[sS秒ｓＳ])([\s　]*)(\d+)([^\d]*.*)', message.content)
             if m:
                 damage = int(m.group(3))
                 comment = str.strip(m.group(1) + m.group(4))
                 dc.Damage(member, damage, comment)
                 return dc
 
-            m = re.match('(\d\d\d+)([^\d]*.*)', message.content)
+            m = re.match(r'(\d\d\d+)([^\d]*.*)', message.content)
             if m:
                 damage = int(m.group(1))
                 comment = str.strip(m.group(2))
                 dc.Damage(member, damage, comment)
                 return dc
 
-            m = re.match('([xXｘＸ×])([\s　]*)([\d]*)([^\d]*.*)', message.content)
+            m = re.match(r'([xXｘＸ×])([\s　]*)([\d]*)([^\d]*.*)', message.content)
             if m:
                 damage = int(m.group(3)) if 0 < len(m.group(3)) else 0
                 comment = m.group(4)

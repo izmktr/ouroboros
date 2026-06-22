@@ -1,4 +1,4 @@
-# tokenkeycode.py というファイル名で以下の行を保存する 
+﻿# tokenkeycode.py というファイル名で以下の行を保存する 
 # TOKEN = 'xxxxxxxxxxxxxxxxxxxxxxxx.yyyyyy.zzzzzzzzzzzzzzzzzzzzzzzzzzz'
 
 import enum
@@ -21,7 +21,7 @@ import re
 import codecs
 import random
 from PIL import Image, ImageDraw, ImageFont
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Awaitable
 from io import BytesIO, StringIO
 from typing import Sequence, TypeVar, Callable
 from functools import cmp_to_key
@@ -274,11 +274,11 @@ class AttackHistory():
         return dic
 
 class MessageReaction():
-    def __init__(self, member) -> None:
+    def __init__(self, member : "ClanMember") -> None:
         self.member = member
-        self.addreaction = None
-        self.removereaction = None
-        self.deletereaction = None
+        self.addreaction: Optional[Callable[["ClanMember", Any], Awaitable[bool]]] = None
+        self.removereaction: Optional[Callable[["ClanMember", Any], Awaitable[Optional[bool]]]] = None
+        self.deletereaction: Optional[Callable[[Any], Awaitable[bool]]] = None
 
 class ClanMember():
     def __init__(self, id):
@@ -289,7 +289,7 @@ class ClanMember():
         self.history : List[AttackHistory] = []         # 攻撃履歴
         self.plan : List[int] = []                      # 凸予定
 
-        self.attacktime = [None] * MAX_SORITE           # 攻撃管理フラグ(None:未凸, 数値:持ち越し時刻)
+        self.attacktime : List[Optional[int]] = [None] * MAX_SORITE           # 攻撃管理フラグ(None:未凸, 数値:持ち越し時刻)
 
         self.sortie = -1                                # 攻撃中判定
         self.boss = 0                                   # 攻撃ボス
@@ -388,8 +388,8 @@ class ClanMember():
         self.sortie = -1
         self.reportlimit = None
 
-    def Overtime(self, sortie):
-        return self.attacktime[sortie]
+    def Overtime(self, sortie) -> int:
+        return self.attacktime[sortie] if self.attacktime[sortie] is not None else 0
 
     def MessageChcck(self, messageid):
         for h in self.history:
@@ -914,7 +914,6 @@ class Clan():
             (['reset'], self.MemberReset),
             (['history'], self.History),
             (['fullhistory'], self.FullHistory),
-#            (['overtime', '持ち越し時間'], self.OverTime),
             (['defeatlog'], self.DefeatLog),
 #            (['attacklog'], self.AttackLog),
             (['defeatgraph'], self.DefeatGraph),
@@ -1156,8 +1155,9 @@ class Clan():
                         pickuplap[bidx] = lap + 1
 
         for bidx in range(BOSSNUMBER):
-            if pickuplap[bidx] is not None:
-                boss = pickuplap[bidx] * BOSSNUMBER + bidx
+            lap = pickuplap[bidx]
+            if lap is not None:
+                boss = lap * BOSSNUMBER + bidx
                 mention = [m.member.mention for m in self.reservelist if m.boss == boss]
 
                 if 0 < len(mention):
@@ -1224,9 +1224,6 @@ class Clan():
                 msg += ' %d秒 討伐' % (h.overtime)
 
             msg += '\n'
-
-        if 0 < len(self.plan):
-            msg += '凸予定: ' + ' '.join(['%d' % (boss + 1) for boss in self.plan]) + '\n'
 
         if msg == '' : msg = '履歴がありません'
         return msg
@@ -1407,7 +1404,8 @@ class Clan():
             self.TemporaryMessage(message.channel, '持52 のように発言してください')
             return False
 
-        if member.attacktime[sortie] is None or member.attacktime[sortie] == 0:
+        attacktime = member.attacktime[sortie]
+        if attacktime is None or attacktime == 0:
             self.TemporaryMessage(message.channel, '持ち越しではありません')
             return False
 
@@ -1422,7 +1420,7 @@ class Clan():
             self.messagereaction.pop(member.attackmessage.id, None)
         member.attackmessage = message
 
-        self.messagereaction[message.id] = self.CreateAttackReaction(member, message, boss, sortie, member.attacktime[sortie])
+        self.messagereaction[message.id] = self.CreateAttackReaction(member, message, boss, sortie, attacktime)
 
         if member.taskkill != 0:
             await message.add_reaction(self.taskkillmark)
@@ -1538,11 +1536,11 @@ class Clan():
 
         route = self.RouteAnalyze(strarray[0])
 
-        if len(route) == 0:
+        if route is None or len(route) == 0:
             self.TemporaryMessage(message.channel, '予約ルートが有りません')
             return False
 
-        comment = None
+        comment = ""
         if 1 < len(strarray):
             comment = strarray[1]
 
@@ -1564,7 +1562,7 @@ class Clan():
 
         route = self.RouteAnalyze(opt)
 
-        if len(route) == 0:
+        if route is None or len(route) == 0:
             self.TemporaryMessage(message.channel, '消したい周回を入れてください すべて消すならallと入れてください')
             return False
 
@@ -1580,7 +1578,7 @@ class Clan():
         
         route = self.RouteAnalyze(strarray[0])
 
-        if len(route) == 0:
+        if route is None or len(route) == 0:
             self.TemporaryMessage(message.channel, 'ルートが有りません')
             return False        
 
@@ -1595,7 +1593,7 @@ class Clan():
             return False        
 
         for m in addmember:
-            self.AddReserve(route, m, None)
+            self.AddReserve(route, m, "")
 
         routestr = [self.RouteString(m) for m in route]
         self.TemporaryMessage(message.channel, '%sに%sを追加しました' % (','.join(routestr), ' '.join([m.name for m in addmember])))
@@ -1611,7 +1609,7 @@ class Clan():
 
         strarray = opt.split(' ')
         route = self.RouteAnalyze(strarray[0])
-        if 0 < len(route) == 0:
+        if route is not None and len(route) > 0:
             routefunc : Callable[[ReserveUnit], bool] = lambda m: m.boss in route
             strarray = strarray[1:]
         else:
@@ -1619,7 +1617,7 @@ class Clan():
 
         addmember = [self.FindMember(name) for name in strarray]
         addmember = [m for m in addmember if m is not None]
-        if len(addmember) == 0 and len(route) == 0:
+        if len(addmember) == 0 and (route is None or len(route) == 0):
             self.TemporaryMessage(message.channel, 'メンバーがいません')
             return False
 
@@ -1643,7 +1641,7 @@ class Clan():
             idx = self.numbermarks.index(payload.emoji.name) - 1
             if 0 <= idx and idx < BOSSNUMBER:
                 boss = self.bosscount[idx] * BOSSNUMBER + idx
-                self.AddReserve([boss], member, None)
+                self.AddReserve([boss], member, "")
                 return True
             return False
 
@@ -1988,26 +1986,6 @@ class Clan():
                 self.TemporaryMessage(message.channel, 'メンバーがいません')
         return False
 
-    async def OverTime(self, message, member : ClanMember, opt):
-        if member is None:
-            member = self.GetMember(message.author)
-
-        try:
-            time = int(opt)
-            if time < 0 or 90 < time:
-                raise ValueError
-            errmes = member.ChangeOvertime(time)
-            if errmes is not None:
-                self.TemporaryMessage(message.channel, errmes)
-                return False
-            self.TemporaryMessage(message.channel, '持ち越し時間を%d秒にしました' % time)
-            return True
-        except ValueError:
-            self.TemporaryMessage(message.channel, '時間が読み取れません')
-            return False
-
-        return True
-
     async def DefeatLog(self, message, member : ClanMember, opt):
         text = '\n'.join(self.defeatTime)
 
@@ -2321,7 +2299,7 @@ class Clan():
         nowtime = datetime.datetime.now()
         now = datetime.datetime.strptime(nowtime.strftime('%m/%d %H:%M'), '%m/%d %H:%M')
 
-        limit = min((now - start).total_seconds() // 60, (CLANBATTLETERM * 24 - 5) * 60)
+        limit = int(min((now - start).total_seconds() // 60, (CLANBATTLETERM * 24 - 5) * 60))
 
         if 0 < limit:
             output = self.CreateAttackGraph(limit)
@@ -2661,7 +2639,7 @@ class Clan():
         global clanhash
 
         for clan in clanhash.values():
-            if clan.lap == 0:
+            if clan.MinLap() == 0:
                 server.append(clan.guild)
 
         for clan in server:
@@ -2823,26 +2801,6 @@ class Clan():
         damagecontrol.Damage(mem, damage)
         await damagecontrol.SendResult()
 
-    async def DamageTest(self, message, member : ClanMember, opt):
-        
-        mem = self.GetIndexValue(self.members, 1)
-        if mem is None: mem = member
-        mem.name = 'ダイチ'
-        self.damagecontrol.Damage(mem, 600)
-
-        mem = self.GetIndexValue(self.members, 2)
-        if mem is None: mem = member
-        mem.name = 'アサヒ'
-        self.damagecontrol.Damage(mem, 800)
-
-        mem = self.GetIndexValue(self.members, 3)
-        if mem is None: mem = member
-        mem.name = 'ミタカ'
-        self.damagecontrol.Damage(mem, 740)
-
-        await self.damagecontrol.SendResult()
-
-
     def ScoreCalc(self, opt):
         try:
             score = int(opt)
@@ -2871,7 +2829,7 @@ class Clan():
         if lap != minlap and lap + 1 in LevelUpLap: return False
         return True
 
-    def RouteAnalyze(self, routestr : str):
+    def RouteAnalyze(self, routestr : str) -> Optional[List[int]]:
         result = []
         addroute = 1
         try:
@@ -2930,7 +2888,7 @@ class Clan():
     def GetDamageControl(self, channel):
         return [m for m in self.damagecontrol if m.channel == channel]
 
-    def DamageControlMessage(self, member : ClanMember, message) -> DamageControl:
+    def DamageControlMessage(self, member : ClanMember, message) -> Optional[DamageControl]:
         #ダメコン使ってないなら無視
         dclist = self.GetDamageControl(message.channel)
         if len(dclist) == 0:
@@ -3066,7 +3024,7 @@ class Clan():
         return BossHpData[self.BossLevel(lap)][bossindex][0]
 
     async def on_raw_reaction_add(self, payload):
-        member : ClanMember = self.members.get(payload.user_id)
+        member : Optional[ClanMember] = self.members.get(payload.user_id)
         if member is None:
             return False
         
@@ -3078,7 +3036,7 @@ class Clan():
         return False
 
     async def on_raw_reaction_remove(self, payload):
-        member : ClanMember = self.members.get(payload.user_id)
+        member : Optional[ClanMember] = self.members.get(payload.user_id)
         if member is None:
             return False
 
@@ -3410,7 +3368,8 @@ async def loop():
                 if len(noticeclan) == 0:
                     noticeclan = [c for c in clanhash.values() if c.inputchannel is not None]
                 for clan in noticeclan:
-                    await clan.inputchannel.send('クランバトル期間を%s-%sに設定しました' % (BATTLESTART, BATTLEEND))
+                    if clan.inputchannel is not None:
+                        await clan.inputchannel.send('クランバトル期間を%s-%sに設定しました' % (BATTLESTART, BATTLEEND))
             except Exception as e:
                 Outlog(ERRFILE, 'error: %s e.args:%s' % (clan.guild.name if clan.guild is not None else 'Unknown', e.args))
 
